@@ -42,6 +42,7 @@ typedef struct {
 
 static uint16_t hid_control = 0;
 static uint16_t hid_interrupt = 0;
+static uint16_t hid_handle = 0;               /* ACL handle of the HID link, 0 if none */
 static volatile int is_connected = 0;
 static int we_initiated = 0;
 static uint8_t mouse_buttons = 0;
@@ -270,6 +271,8 @@ static void mouse_click(uint8_t mask) {
     send_mouse(mask, 0, 0, 0);
     usleep(10000);
     send_mouse(0, 0, 0, 0);
+    usleep(4000);
+    send_mouse(0, 0, 0, 0);       /* repeated: a dropped release would leave the button stuck */
     mouse_buttons = 0;
 }
 
@@ -299,11 +302,15 @@ static void key_tap(uint8_t modifiers, uint8_t key) {
     usleep(8000);
     send_keyboard(0, 0);
     usleep(4000);
+    send_keyboard(0, 0);          /* repeated: a dropped release would leave the key stuck */
+    usleep(2000);
 }
 
 static void media_tap(uint16_t usage) {
     send_consumer(usage);
     usleep(10000);
+    send_consumer(0);
+    usleep(4000);
     send_consumer(0);
 }
 
@@ -845,9 +852,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                 case L2CAP_EVENT_CHANNEL_OPENED:
                     if (l2cap_event_channel_opened_get_status(packet)) {
-                        status_text = "Connection to TV failed - pair again";
+                        we_initiated = 0;
+                        status_text = hid_control ? "Connection to TV failed - try again"
+                                                  : "Could not reach the TV - is it on? (pair again if it keeps failing)";
                         break;
                     }
+                    hid_handle = little_endian_read_16(packet, 9);
                     psm = little_endian_read_16(packet, 11);
                     local_cid = little_endian_read_16(packet, 13);
                     if (psm == BLUETOOTH_PSM_HID_CONTROL) {
@@ -907,6 +917,10 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     break;
 
                 case HCI_EVENT_DISCONNECTION_COMPLETE:
+                    if (packet[2] != 0) break;
+                    /* a link we do not use (a stray device, a failed pairing) dropped: keep our HID state */
+                    if (hid_handle != 0 && little_endian_read_16(packet, 3) != hid_handle) break;
+                    hid_handle = 0;
                     connected_str[0] = 0;
                     pin_request = 0;
                     is_connected = 0;

@@ -8,6 +8,8 @@
     NSMutableArray *arrowRows, *fkeyRows;
     UIButton *ctrlB, *winB, *altB, *shiftB;
     UILabel *status;
+    UIView *topBar;                 /* the panel carries its own top bar (owned by the main controller) */
+    UIView *backdrop;
     NSTimer *pasteTimer;
     NSTimer *repeatTimer;
     int repeatUsage;
@@ -15,6 +17,7 @@
     int pasteSkipped;
     int layoutIndex;
 }
+- (void)setTopBar:(UIView *)bar;    /* bar that slides together with the panel */
 - (void)activate;
 - (void)deactivate;
 - (void)showLayout:(int)index;      /* 0 = arrows, 1 = F-keys */

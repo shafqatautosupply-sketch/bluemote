@@ -54,6 +54,8 @@
     [settingsItem release];
     [dropItem release];
     [pasteItem release];
+    [kbBar release];
+    [keyboard release];
     [super dealloc];
 }
 
@@ -76,10 +78,17 @@
     [media release];
 
     keyboard = [[KeyboardView alloc] initWithFrame:CGRectMake(0, b.size.height, b.size.width, b.size.height)];
-    keyboard.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    keyboard.hidden = YES;
-    [v addSubview:keyboard];
-    [keyboard release];
+    keyboard.hidden = YES;                        /* owned by this controller; added over the whole screen when shown */
+
+    kbBar = [[UINavigationBar alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
+    kbBar.tintColor = [UIColor colorWithRed:0.21f green:0.27f blue:0.37f alpha:1.0f];
+    UINavigationItem *ki = [[UINavigationItem alloc] initWithTitle:@""];
+    ki.titleView = kbSegment;                     /* [ Arrows | F-Keys ] */
+    ki.leftBarButtonItem = dropItem;
+    ki.rightBarButtonItem = pasteItem;
+    [kbBar pushNavigationItem:ki animated:NO];
+    [ki release];
+    [keyboard setTopBar:kbBar];
 }
 
 - (void)viewDidLoad {
@@ -99,17 +108,11 @@
 
 - (void)applyNavAnimated:(BOOL)animated {
     UINavigationItem *ni = self.navigationItem;
-    if (keyboardShown) {
-        ni.titleView = kbSegment;                 /* [ Arrows | F-Keys ] in the middle */
-        [ni setLeftBarButtonItem:dropItem animated:animated];
-        [ni setRightBarButtonItem:pasteItem animated:animated];
-    } else {
-        [titleView setPageTitle:(baseMode == 0 ? @"Trackpad" : @"Media")];
-        switchItem.image = [UIImage imageNamed:(baseMode == 0 ? @"bar_media.png" : @"bar_trackpad.png")];
-        ni.titleView = titleView;
-        [ni setLeftBarButtonItem:switchItem animated:animated];
-        [ni setRightBarButtonItem:settingsItem animated:animated];
-    }
+    [titleView setPageTitle:(baseMode == 0 ? @"Trackpad" : @"Media")];
+    switchItem.image = [UIImage imageNamed:(baseMode == 0 ? @"bar_media.png" : @"bar_trackpad.png")];
+    ni.titleView = titleView;
+    [ni setLeftBarButtonItem:switchItem animated:animated];
+    [ni setRightBarButtonItem:settingsItem animated:animated];
 }
 
 - (void)switchMode {
@@ -132,29 +135,44 @@
 
 /* ---------------------------------------------------------------- keyboard panel */
 
+/* The keyboard is one solid sheet (its own top bar + keys) that slides over the whole screen.
+   Order: slide up first, then the iOS keyboard appears. Closing: iOS keyboard drops first, then the sheet slides down. */
 - (void)showKeyboard {
-    if (keyboardShown) return;
+    if (keyboardShown || keyboardAnimating) return;
     keyboardShown = YES;
-    CGRect b = self.view.bounds;
-    keyboard.frame = CGRectMake(0, b.size.height, b.size.width, b.size.height);
+    keyboardAnimating = YES;
+    UIView *host = self.navigationController ? self.navigationController.view : self.view;
+    CGRect hb = host.bounds;                      /* includes the navigation bar, so the sheet covers it too */
+    if (keyboard.superview != host) [host addSubview:keyboard];
+    keyboard.frame = CGRectMake(0, hb.size.height, hb.size.width, hb.size.height);
     keyboard.hidden = NO;
-    [self applyNavAnimated:YES];
+    [host bringSubviewToFront:keyboard];
     [self pasteStateChanged];
     [UIView animateWithDuration:0.32 delay:0.0 options:UIViewAnimationOptionCurveEaseOut
-                     animations:^{ keyboard.frame = b; } completion:nil];
-    [keyboard activate];                          /* the iOS keyboard rises together with the panel */
+                     animations:^{ keyboard.frame = hb; }
+                     completion:^(BOOL finished) {
+                         keyboardAnimating = NO;
+                         if (keyboardShown) [keyboard activate];     /* only now does the iOS keyboard rise */
+                     }];
 }
 
 - (void)hideKeyboard {
-    if (!keyboardShown) return;
+    if (!keyboardShown || keyboardAnimating) return;
     keyboardShown = NO;
-    [keyboard deactivate];
-    CGRect b = self.view.bounds;
-    CGRect off = CGRectMake(0, b.size.height, b.size.width, b.size.height);
+    keyboardAnimating = YES;
+    [keyboard deactivate];                        /* iOS keyboard drops first ... */
+    [self performSelector:@selector(slideKeyboardDown) withObject:nil afterDelay:0.30];
+}
+
+- (void)slideKeyboardDown {                       /* ... then the sheet slides away */
+    CGRect hb = keyboard.superview ? keyboard.superview.bounds : self.view.bounds;
+    CGRect off = CGRectMake(0, hb.size.height, hb.size.width, hb.size.height);
     [UIView animateWithDuration:0.28 delay:0.0 options:UIViewAnimationOptionCurveEaseIn
                      animations:^{ keyboard.frame = off; }
-                     completion:^(BOOL finished) { if (!keyboardShown) keyboard.hidden = YES; }];
-    [self applyNavAnimated:YES];
+                     completion:^(BOOL finished) {
+                         keyboardAnimating = NO;
+                         if (!keyboardShown) keyboard.hidden = YES;
+                     }];
 }
 
 - (void)layoutChanged:(UISegmentedControl *)seg {
@@ -220,6 +238,7 @@
     if (alertView == pinAlert) {
         [pinAlert release];
         pinAlert = nil;
+        if (keyboardShown && !keyboardAnimating) [keyboard activate];
     }
 }
 

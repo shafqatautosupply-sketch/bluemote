@@ -122,7 +122,7 @@
             btcombo_sendf("HW %d", natural ? -sh : sh);    /* pan: + = right */
             scrollAccX -= sh * 10.0f;
         }
-    } else if (n == 1) {
+    } else if (n == 1 && maxTouches == 1) {
         float d = sqrtf(dx * dx + dy * dy);
         float gain = 1.2f + d * 0.15f;
         if (gain > 4.0f) gain = 4.0f;

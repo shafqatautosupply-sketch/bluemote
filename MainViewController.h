@@ -17,6 +17,8 @@
     UIAlertView *pinAlert;
     BOOL pinAutoDismiss;
     BOOL keyboardShown;
+    BOOL keyboardAnimating;        /* the sheet is sliding: ignore further taps so animations never race */
+    UINavigationBar *kbBar;        /* top bar of the keyboard sheet */
     int baseMode;                  /* 0 = trackpad, 1 = media */
 }
 @end

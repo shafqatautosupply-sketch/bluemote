@@ -85,8 +85,14 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (id)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = BTLinenColor();
+        self.backgroundColor = [UIColor blackColor];     /* solid, so nothing behind the panel ever shows through */
+        self.opaque = YES;
         self.clipsToBounds = YES;
+
+        backdrop = [[UIView alloc] initWithFrame:CGRectZero];
+        backdrop.backgroundColor = BTLinenColor();
+        [self addSubview:backdrop];
+        [backdrop release];
 
         /* off-screen text field that captures the iOS keyboard */
         field = [[UITextField alloc] initWithFrame:CGRectMake(-300, -100, 100, 30)];
@@ -169,12 +175,15 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 
 - (void)layoutSubviews {
     CGFloat w = self.bounds.size.width;
-    CGRect paneFrame = CGRectMake(0, 6, w, 172);
+    const CGFloat barH = 44.0f;
+    backdrop.frame = self.bounds;
+    topBar.frame = CGRectMake(0, 0, w, barH);
+    CGRect paneFrame = CGRectMake(0, barH + 6, w, 172);
     arrowPane.frame = paneFrame;
     fkeyPane.frame = paneFrame;
     [self layoutRows:arrowRows width:w];
     [self layoutRows:fkeyRows width:w];
-    status.frame = CGRectMake(10, 180, w - 20, 16);
+    status.frame = CGRectMake(10, barH + 180, w - 20, 16);
 }
 
 - (void)showLayout:(int)index {
@@ -185,6 +194,13 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
     [UIView transitionFromView:from toView:to duration:0.25
                        options:(UIViewAnimationOptionTransitionCrossDissolve | UIViewAnimationOptionShowHideTransitionViews)
                     completion:nil];
+}
+
+- (void)setTopBar:(UIView *)bar {
+    [topBar removeFromSuperview];
+    topBar = bar;
+    if (topBar) [self addSubview:topBar];
+    [self setNeedsLayout];
 }
 
 - (void)activate   { [field becomeFirstResponder]; }

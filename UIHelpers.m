@@ -8,7 +8,7 @@ static UIImage *BTButtonImage(BTButtonStyle style, BOOL pressed) {
     UIImage *cached = cache[style][pressed ? 1 : 0];
     if (cached) return cached;
 
-    const CGFloat w = 24.0f, h = 44.0f, radius = 9.0f;
+    const CGFloat w = 24.0f, h = 30.0f, radius = 9.0f;
     CGFloat top[3], bottom[3], border[3];
     BOOL gloss = NO;
     switch (style) {
