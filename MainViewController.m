@@ -1,0 +1,230 @@
+#import "MainViewController.h"
+#import "StatusTitleView.h"
+#import "TrackpadView.h"
+#import "MediaView.h"
+#import "KeyboardView.h"
+#import "SettingsViewController.h"
+#import "UIHelpers.h"
+
+@implementation MainViewController
+
+- (UIBarButtonItem *)barItemImage:(NSString *)image action:(SEL)action {
+    return [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:image]
+                                            style:UIBarButtonItemStyleBordered target:self action:action];
+}
+
+- (id)init {
+    self = [super init];
+    if (self) {
+        self.title = @"Remote";
+        baseMode = (int)[[NSUserDefaults standardUserDefaults] integerForKey:kPrefBaseMode];
+        if (baseMode != 1) baseMode = 0;
+
+        titleView    = [[StatusTitleView alloc] initWithTitle:@"Trackpad"];
+        switchItem   = [self barItemImage:@"bar_media.png" action:@selector(switchMode)];
+        settingsItem = [self barItemImage:@"bar_gear.png" action:@selector(openSettings)];
+        dropItem     = [self barItemImage:@"bar_dropdown.png" action:@selector(hideKeyboard)];
+        pasteItem    = [[UIBarButtonItem alloc] initWithTitle:@"Paste" style:UIBarButtonItemStyleBordered
+                                                       target:self action:@selector(pasteTapped)];
+
+        kbSegment = [[UISegmentedControl alloc] initWithItems:[NSArray arrayWithObjects:@"Arrows", @"F-Keys", nil]];
+        kbSegment.segmentedControlStyle = UISegmentedControlStyleBar;
+        kbSegment.selectedSegmentIndex = 0;
+        kbSegment.frame = CGRectMake(0, 0, 150, 30);
+        [kbSegment addTarget:self action:@selector(layoutChanged:) forControlEvents:UIControlEventValueChanged];
+
+        self.navigationItem.backBarButtonItem = [[[UIBarButtonItem alloc] initWithTitle:@"Back"
+                                                    style:UIBarButtonItemStyleBordered target:nil action:nil] autorelease];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(showKeyboard)
+                                                     name:BTShowKeyboardNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(pasteStateChanged)
+                                                     name:BTPasteStateNotification object:nil];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [timer invalidate];
+    [timer release];
+    [titleView release];
+    [kbSegment release];
+    [switchItem release];
+    [settingsItem release];
+    [dropItem release];
+    [pasteItem release];
+    [super dealloc];
+}
+
+- (void)loadView {
+    UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 416)];
+    v.backgroundColor = BTLinenColor();
+    v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.view = v;
+    [v release];
+    CGRect b = v.bounds;
+
+    trackpad = [[TrackpadView alloc] initWithFrame:b];
+    media    = [[MediaView alloc] initWithFrame:b];
+    trackpad.autoresizingMask = media.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    trackpad.hidden = (baseMode != 0);
+    media.hidden = (baseMode != 1);
+    [v addSubview:trackpad];
+    [v addSubview:media];
+    [trackpad release];
+    [media release];
+
+    keyboard = [[KeyboardView alloc] initWithFrame:CGRectMake(0, b.size.height, b.size.width, b.size.height)];
+    keyboard.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    keyboard.hidden = YES;
+    [v addSubview:keyboard];
+    [keyboard release];
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [self applyNavAnimated:NO];
+    timer = [[NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(tick)
+                                            userInfo:nil repeats:YES] retain];
+    [self tick];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [media reloadSettings];                       /* Settings may have changed the media pad */
+}
+
+/* ---------------------------------------------------------------- top bar */
+
+- (void)applyNavAnimated:(BOOL)animated {
+    UINavigationItem *ni = self.navigationItem;
+    if (keyboardShown) {
+        ni.titleView = kbSegment;                 /* [ Arrows | F-Keys ] in the middle */
+        [ni setLeftBarButtonItem:dropItem animated:animated];
+        [ni setRightBarButtonItem:pasteItem animated:animated];
+    } else {
+        [titleView setPageTitle:(baseMode == 0 ? @"Trackpad" : @"Media")];
+        switchItem.image = [UIImage imageNamed:(baseMode == 0 ? @"bar_media.png" : @"bar_trackpad.png")];
+        ni.titleView = titleView;
+        [ni setLeftBarButtonItem:switchItem animated:animated];
+        [ni setRightBarButtonItem:settingsItem animated:animated];
+    }
+}
+
+- (void)switchMode {
+    UIView *from = (baseMode == 0) ? (UIView *)trackpad : (UIView *)media;
+    UIView *to   = (baseMode == 0) ? (UIView *)media : (UIView *)trackpad;
+    UIViewAnimationOptions opts = UIViewAnimationOptionShowHideTransitionViews |
+        (baseMode == 0 ? UIViewAnimationOptionTransitionFlipFromRight : UIViewAnimationOptionTransitionFlipFromLeft);
+    baseMode = 1 - baseMode;
+    [[NSUserDefaults standardUserDefaults] setInteger:baseMode forKey:kPrefBaseMode];
+    [media reloadSettings];
+    [UIView transitionFromView:from toView:to duration:0.55 options:opts completion:nil];
+    [self applyNavAnimated:YES];
+}
+
+- (void)openSettings {
+    SettingsViewController *s = [[SettingsViewController alloc] init];
+    [self.navigationController pushViewController:s animated:YES];
+    [s release];
+}
+
+/* ---------------------------------------------------------------- keyboard panel */
+
+- (void)showKeyboard {
+    if (keyboardShown) return;
+    keyboardShown = YES;
+    CGRect b = self.view.bounds;
+    keyboard.frame = CGRectMake(0, b.size.height, b.size.width, b.size.height);
+    keyboard.hidden = NO;
+    [self applyNavAnimated:YES];
+    [self pasteStateChanged];
+    [UIView animateWithDuration:0.32 delay:0.0 options:UIViewAnimationOptionCurveEaseOut
+                     animations:^{ keyboard.frame = b; } completion:nil];
+    [keyboard activate];                          /* the iOS keyboard rises together with the panel */
+}
+
+- (void)hideKeyboard {
+    if (!keyboardShown) return;
+    keyboardShown = NO;
+    [keyboard deactivate];
+    CGRect b = self.view.bounds;
+    CGRect off = CGRectMake(0, b.size.height, b.size.width, b.size.height);
+    [UIView animateWithDuration:0.28 delay:0.0 options:UIViewAnimationOptionCurveEaseIn
+                     animations:^{ keyboard.frame = off; }
+                     completion:^(BOOL finished) { if (!keyboardShown) keyboard.hidden = YES; }];
+    [self applyNavAnimated:YES];
+}
+
+- (void)layoutChanged:(UISegmentedControl *)seg {
+    [keyboard showLayout:(int)seg.selectedSegmentIndex];
+}
+
+- (void)pasteTapped {
+    [keyboard togglePaste];
+}
+
+- (void)pasteStateChanged {
+    BOOL pasting = [keyboard isPasting];
+    pasteItem.title = pasting ? @"Stop" : @"Paste";
+    pasteItem.tintColor = pasting ? [UIColor colorWithRed:0.78f green:0.12f blue:0.12f alpha:1.0f] : nil;
+}
+
+/* ---------------------------------------------------------------- status and PIN */
+
+- (void)tick {
+    BOOL connected;
+    NSString *text = BTStatusText(&connected);
+    [titleView setStatus:text connected:connected];
+
+    /* the TV asked for a PIN / passkey: prompt on whatever screen we are on */
+    int req = btcombo_pin_request();
+    if (req != 0 && pinAlert == nil) {
+        [self showPinAlert:req];
+    } else if (req == 0 && pinAlert != nil) {
+        pinAutoDismiss = YES;                     /* request ended by itself (timeout / pairing finished) */
+        [pinAlert dismissWithClickedButtonIndex:[pinAlert cancelButtonIndex] animated:NO];
+    }
+}
+
+- (void)showPinAlert:(int)kind {
+    NSString *title = (kind == 2) ? @"Enter passkey" : @"Enter PIN";
+    NSString *msg = (kind == 2)
+        ? @"Type the passkey shown on the TV, then tap Pair."
+        : @"Type the PIN shown on the TV, then tap Pair. If the TV shows no PIN, try 0000.";
+    pinAutoDismiss = NO;
+    pinAlert = [[UIAlertView alloc] initWithTitle:title message:msg delegate:self
+                                cancelButtonTitle:@"Cancel" otherButtonTitles:@"Pair", nil];
+    pinAlert.alertViewStyle = UIAlertViewStylePlainTextInput;
+    UITextField *tf = [pinAlert textFieldAtIndex:0];
+    tf.keyboardType = UIKeyboardTypeNumberPad;
+    tf.placeholder = @"PIN";
+    tf.text = (kind == 1) ? @"0000" : @"";
+    [pinAlert show];
+}
+
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
+    if (alertView != pinAlert || pinAutoDismiss) return;
+    if (buttonIndex == [alertView cancelButtonIndex]) {
+        btcombo_send("PINCANCEL");
+        return;
+    }
+    NSString *code = [[[alertView textFieldAtIndex:0] text]
+                      stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([code length] == 0) btcombo_send("PINCANCEL");
+    else btcombo_sendf("PIN %s", [code UTF8String]);
+}
+
+- (void)alertView:(UIAlertView *)alertView didDismissWithButtonIndex:(NSInteger)buttonIndex {
+    if (alertView == pinAlert) {
+        [pinAlert release];
+        pinAlert = nil;
+    }
+}
+
+- (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)o { return o == UIInterfaceOrientationPortrait; }
+- (BOOL)shouldAutorotate { return NO; }
+- (NSUInteger)supportedInterfaceOrientations { return UIInterfaceOrientationMaskPortrait; }
+
+@end

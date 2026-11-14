@@ -1,0 +1,10 @@
+#!/bin/sh
+PLIST=/Library/LaunchDaemons/com.btcombo.BTdaemon.plist
+chown root:wheel $PLIST /usr/bin/BTComboDaemon
+chmod 644 $PLIST
+chmod 755 /usr/bin/BTComboDaemon
+touch /var/log/BTcombo.log
+chmod 644 /var/log/BTcombo.log
+/bin/launchctl unload $PLIST >/dev/null 2>&1
+/bin/launchctl load $PLIST >/dev/null 2>&1
+exit 0
