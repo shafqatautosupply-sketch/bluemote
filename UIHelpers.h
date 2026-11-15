@@ -18,7 +18,9 @@ void BTSetButtonStyle(UIButton *b, BTButtonStyle style);
 void BTSetButtonToggle(UIButton *b, BOOL on, BTButtonStyle offStyle);                            /* on = blue */
 void BTSetButtonOn(UIButton *b, BOOL on);
 
-UIColor *BTLinenColor(void);                                                                     /* native iOS 6 linen */
+UIColor *BTBackdropColor(void);                                                                  /* dark brushed graphite behind the aluminium (replaces the linen / black) */
+UIColor *BTBarTintColor(void);                                                                   /* dark grey navigation bar */
+UIColor *BTBarButtonTintColor(void);                                                             /* slightly lighter grey for the bar buttons */
 void BTDrawPanel(CGRect rect, CGFloat radius);                                                   /* vertically brushed aluminium slab with etched border (cached) */
 void BTDrawEngravedText(NSString *text, CGRect rect, UIFont *font, NSTextAlignment align);
 
@@ -26,9 +28,18 @@ void BTDrawUnibody(CGRect rect, CGFloat radius);                                
 void BTDrawBrushedFill(CGRect rect);                                                             /* full-bleed brushed aluminium (keyboard sheet background) */
 void BTDrawEtchedBox(CGRect rect, CGFloat radius, BOOL recessed);                                /* etched section border (groove + light line), optional soft recess */
 
+/* Same etched section as BTDrawEtchedBox, but built from live layers (borders + a gradient) instead of a bitmap, so it can be
+   resized inside a UIView animation without being redrawn or stretched. The brushed metal behind it never changes. */
+@interface BTEtchedBoxView : UIView {
+    UIView *recess;
+}
+- (id)initWithRadius:(CGFloat)r recessed:(BOOL)rec;
+@end
+
 /* ---- machined aluminium key: square, round corners, smooth face on a dark side wall. Used by every key in the app. ---- */
-#define BT_KEY_RADIUS 10.0f
-#define BT_KEY_DEPTH  3.0f
+#define BT_KEY_RADIUS 18.0f      /* upper limit; the real radius follows the key size (BTKeyRadius), so keys read soft, not blocky */
+#define BT_KEY_DEPTH  2.5f
+CGFloat BTKeyRadius(CGRect r);
 void BTKeyFrames(CGRect bounds, CGRect *wall, CGRect *face, BOOL down);
 void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue);
 void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, BOOL blue);

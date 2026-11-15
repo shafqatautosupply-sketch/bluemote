@@ -1,5 +1,20 @@
 # Changelog
 
+## 7.4.0
+- **Softer keys.** Every key (keyboard sheet, trackpad Left / Right / Back / Home, media remote, VOL / CH rockers) now has a corner
+  radius that follows its size (`BTKeyRadius`, about 42% of the short side), a thinner side wall, a domed face (sheen on top, a
+  little shade below) and a light rounded rim, so they no longer look like square blocks.
+- **Media page is one unibody** in Reels and trackpad-style pad mode, like the main Trackpad page: a full-page brushed block
+  with the pad and the remote etched into it as separate sections. The D-pad page keeps its slab.
+- **No more finish change when expanding / collapsing** the media pad: the aluminium is never resized or redrawn, only the
+  etched borders (new `BTEtchedBoxView`, live layers instead of a bitmap) move.
+- **Reels on / off flips the media page** the same way Trackpad <-> Media does.
+- **Dark grey navigation bar** (was blue-grey) with lighter grey bar buttons, segmented controls and Back buttons to match.
+- **Soft warning on untested setups.** Anything other than an iPhone 4s on iOS 6 gets an "Untested device" prompt (Quit /
+  Continue). Bluetooth, and with it the daemon, only starts after Continue; the choice is remembered per model + iOS version.
+- **Dark brushed graphite backdrop** (`BTBackdropColor`) replaces the linen / black behind the slabs, the window, the
+  navigation controller and the keyboard sheet.
+
 ## 7.3.0
 - **OK button works like a real remote.** OK used to send keyboard Enter, so with Gboard open it committed the text instead of
   selecting the highlighted suggestion. It now sends HID Consumer "Menu Pick" (0x41, Android DPAD_CENTER).

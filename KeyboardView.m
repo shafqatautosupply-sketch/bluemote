@@ -68,7 +68,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (id)initWithFrame:(CGRect)f {
     self = [super initWithFrame:f];
     if (self) {
-        self.backgroundColor = BTLinenColor();
+        self.backgroundColor = BTBackdropColor();
         self.opaque = YES;
         self.userInteractionEnabled = NO;
         self.contentMode = UIViewContentModeRedraw;
@@ -114,7 +114,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (id)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = [UIColor blackColor];     /* solid, so nothing behind the panel ever shows through */
+        self.backgroundColor = BTBackdropColor();        /* solid, so nothing behind the panel ever shows through */
         self.opaque = YES;
         self.clipsToBounds = YES;
 

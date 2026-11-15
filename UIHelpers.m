@@ -112,9 +112,8 @@ void BTSetButtonOn(UIButton *b, BOOL on) {
 
 /* ------------------------------------------------------------------ panels and text */
 
-UIColor *BTLinenColor(void) {
-    return [UIColor groupTableViewBackgroundColor];          /* the real iOS 6 linen */
-}
+UIColor *BTBarTintColor(void)       { return [UIColor colorWithRed:0.25f green:0.26f blue:0.28f alpha:1.0f]; }
+UIColor *BTBarButtonTintColor(void) { return [UIColor colorWithRed:0.37f green:0.38f blue:0.41f alpha:1.0f]; }
 
 /* ---- brushed aluminium slab (trackpad, media pad, D-pad backdrop) ----
    Drawn once per size into a cached image (deterministic grain, so it never shimmers), then just blitted.
@@ -126,6 +125,29 @@ UIColor *BTLinenColor(void) {
 static CGFloat BTRnd(unsigned int *s) {                        /* tiny LCG: same sequence every time */
     *s = (*s) * 1664525u + 1013904223u;
     return (CGFloat)((*s >> 8) & 0xFFFF) / 65535.0f;
+}
+
+/* Dark brushed graphite that sits behind the aluminium slabs: the same vertical grain as the metal, just dark, so the
+   slab pops and the nav bar, the flip transition and the keyboard sheet all share one colour. One column of random
+   tone per pixel; it is constant going down, so the tile repeats without a seam. */
+UIColor *BTBackdropColor(void) {
+    static UIColor *color = nil;
+    if (color) return color;
+    CGFloat scale = [[UIScreen mainScreen] scale];
+    CGFloat px = 1.0f / scale;
+    const CGFloat W = 128.0f, H = 8.0f;
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(W, H), YES, scale);
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    unsigned int seed = 0xB10C0DE5u;
+    for (CGFloat x = 0; x < W; x += px) {
+        CGFloat v = (BTRnd(&seed) * 2.0f - 1.0f) * 0.014f;
+        CGContextSetRGBFillColor(c, 0.185f + v, 0.192f + v, 0.208f + v, 1.0f);
+        CGContextFillRect(c, CGRectMake(x, 0, px, H));
+    }
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    color = [[UIColor colorWithPatternImage:img] retain];
+    return color;
 }
 
 #define BT_SLAB_BORDER 1      /* built-in etched border close to the edge */
@@ -272,6 +294,56 @@ void BTDrawEtchedBox(CGRect rect, CGFloat radius, BOOL recessed) {
     [p stroke];
 }
 
+@interface BTGradientView : UIView
+@end
+@implementation BTGradientView
++ (Class)layerClass { return [CAGradientLayer class]; }
+@end
+
+@implementation BTEtchedBoxView
+
+static UIView *BTLineView(CGRect f, CGFloat radius, UIColor *c) {
+    UIView *v = [[[UIView alloc] initWithFrame:f] autorelease];
+    v.backgroundColor = [UIColor clearColor];
+    v.userInteractionEnabled = NO;
+    v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    v.layer.cornerRadius = radius;
+    v.layer.borderWidth = 1.0f;
+    v.layer.borderColor = c.CGColor;
+    return v;
+}
+
+- (id)initWithRadius:(CGFloat)r recessed:(BOOL)rec {
+    self = [super initWithFrame:CGRectMake(0, 0, 40.0f, 40.0f)];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+        self.userInteractionEnabled = NO;
+        if (rec) {                                                /* soft shadow along the top inside edge: the pad is sunk in */
+            recess = [[UIView alloc] initWithFrame:CGRectMake(1.0f, 1.0f, 38.0f, 37.0f)];
+            recess.backgroundColor = [UIColor clearColor];
+            recess.clipsToBounds = YES;
+            recess.layer.cornerRadius = MAX(r - 1.0f, 2.0f);
+            recess.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+            BTGradientView *g = [[BTGradientView alloc] initWithFrame:CGRectMake(0, 0, 38.0f, 7.0f)];
+            g.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+            ((CAGradientLayer *)g.layer).colors = [NSArray arrayWithObjects:
+                (id)[UIColor colorWithWhite:0.0f alpha:0.16f].CGColor,
+                (id)[UIColor colorWithWhite:0.0f alpha:0.0f].CGColor, nil];
+            [recess addSubview:g];
+            [g release];
+            [self addSubview:recess];
+            [recess release];
+        }
+        /* a light line under a dark groove, exactly like BTDrawEtchedBox; the light line sits 1 pt lower */
+        [self addSubview:BTLineView(CGRectMake(0, 1.0f, 40.0f, 39.0f), r, [UIColor colorWithWhite:1.0f alpha:0.85f])];
+        [self addSubview:BTLineView(CGRectMake(0, 0, 40.0f, 39.0f), r, [UIColor colorWithWhite:0.22f alpha:0.60f])];
+    }
+    return self;
+}
+
+@end
+
 /* ------------------------------------------------------------------ aluminium keys */
 
 /* ---- machined aluminium key: a dark side wall (the block's thickness) with the smooth top face sitting on it.
@@ -282,8 +354,14 @@ void BTKeyFrames(CGRect bounds, CGRect *wall, CGRect *face, BOOL down) {
     *face = CGRectOffset(top, 0, down ? BT_KEY_DEPTH - 1.0f : 0.0f);
 }
 
+/* corner radius follows the key: about 42% of the short side (a soft, almost pill shape), never more than BT_KEY_RADIUS */
+CGFloat BTKeyRadius(CGRect r) {
+    CGFloat m = MIN(r.size.width, r.size.height);
+    return MIN(BT_KEY_RADIUS, floorf(m * 0.42f));
+}
+
 void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue) {
-    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:wall cornerRadius:BT_KEY_RADIUS];
+    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:wall cornerRadius:BTKeyRadius(wall)];
     CGContextSaveGState(c);                                            /* contact shadow on the slab */
     CGContextSetShadowWithColor(c, CGSizeMake(0, 1.0f), 2.5f, [UIColor colorWithWhite:0.0f alpha:0.50f].CGColor);
     [[UIColor colorWithWhite:0.40f alpha:1.0f] setFill];
@@ -302,9 +380,12 @@ void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue) {
     [p stroke];
 }
 
-/* smooth face, same metal as the D-pad ring; a pressed key is dished (dark on top, light below) like the OK button */
+/* smooth face, same metal as the D-pad ring; a pressed key is dished (dark on top, light below) like the OK button.
+   The face is softly domed (sheen on top, a little shade at the bottom) with a light rounded rim, so it reads as a
+   pebble of metal rather than a flat block. */
 void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, BOOL blue) {
-    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(face, 0.5f, 0.5f) cornerRadius:BT_KEY_RADIUS];
+    CGFloat radius = BTKeyRadius(face);
+    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(face, 0.5f, 0.5f) cornerRadius:radius];
     CGContextSaveGState(c);
     [p addClip];
     CGFloat up[8]   = { 0.99f, 0.99f, 1.00f, 1.0f, 0.70f, 0.72f, 0.76f, 1.0f };
@@ -315,12 +396,19 @@ void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, B
     CGGradientRef g = CGGradientCreateWithColorComponents(cs, comps, NULL, 2);
     CGContextDrawLinearGradient(c, g, CGPointMake(0, face.origin.y), CGPointMake(0, CGRectGetMaxY(face)), 0);
     CGGradientRelease(g);
-    if (!down) {                                                       /* bright bevel along the top edge */
-        CGContextSetRGBStrokeColor(c, 1, 1, 1, 0.80f);
-        CGContextSetLineWidth(c, 1.0f);
-        CGContextMoveToPoint(c, face.origin.x + BT_KEY_RADIUS, face.origin.y + 1.5f);
-        CGContextAddLineToPoint(c, CGRectGetMaxX(face) - BT_KEY_RADIUS, face.origin.y + 1.5f);
-        CGContextStrokePath(c);
+    if (!down) {
+        CGFloat sheen[8] = { 1, 1, 1, 0.30f, 1, 1, 1, 0.0f };           /* soft sheen over the upper half */
+        CGGradientRef sg = CGGradientCreateWithColorComponents(cs, sheen, NULL, 2);
+        CGContextDrawLinearGradient(c, sg, CGPointMake(0, face.origin.y), CGPointMake(0, face.origin.y + face.size.height * 0.55f), 0);
+        CGGradientRelease(sg);
+        CGFloat shade[8] = { 0, 0, 0, 0.0f, 0, 0, 0, 0.10f };           /* a little shade toward the bottom edge */
+        CGGradientRef dg = CGGradientCreateWithColorComponents(cs, shade, NULL, 2);
+        CGContextDrawLinearGradient(c, dg, CGPointMake(0, face.origin.y + face.size.height * 0.55f), CGPointMake(0, CGRectGetMaxY(face)), 0);
+        CGGradientRelease(dg);
+        UIBezierPath *rim = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(face, 1.5f, 1.5f) cornerRadius:MAX(radius - 1.0f, 2.0f)];
+        [[UIColor colorWithWhite:1.0f alpha:0.50f] setStroke];          /* light rounded rim just inside the edge */
+        [rim setLineWidth:1.0f];
+        [rim stroke];
     }
     CGContextRestoreGState(c);
     [[UIColor colorWithWhite:(blue ? 0.06f : 0.33f) alpha:1.0f] setStroke];
@@ -342,7 +430,7 @@ void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, B
 
 /* the face is 1.5 pt above the middle of the frame (wall below it) and dips 2 pt when pressed: keep the label on it */
 - (void)applyInsets {
-    UIEdgeInsets in = self.highlighted ? UIEdgeInsetsMake(0, 0, -1.0f, 0) : UIEdgeInsetsMake(0, 0, 3.0f, 0);
+    UIEdgeInsets in = self.highlighted ? UIEdgeInsetsMake(0, 0, -(BT_KEY_DEPTH - 2.0f), 0) : UIEdgeInsetsMake(0, 0, BT_KEY_DEPTH, 0);
     self.titleEdgeInsets = in;
     self.imageEdgeInsets = in;
 }

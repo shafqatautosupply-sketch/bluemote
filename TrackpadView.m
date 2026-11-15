@@ -194,7 +194,7 @@
 - (id)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = BTLinenColor();
+        self.backgroundColor = BTBackdropColor();
         self.contentMode = UIViewContentModeRedraw;
         surface = [[TrackpadSurface alloc] initWithFrame:CGRectZero];
         [self addSubview:surface];

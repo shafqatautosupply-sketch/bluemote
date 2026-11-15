@@ -44,15 +44,19 @@ static UIImage *BTBarIcon(NSString *name) {
         dropItem = [self barItemImage:@"bar_dropdown.png" action:@selector(hideKeyboard)];
         pasteItem = [[UIBarButtonItem alloc] initWithTitle:@"Paste" style:UIBarButtonItemStyleBordered
             target:self action:@selector(pasteTapped)];
+        /* the bar is dark grey now, so its buttons are a slightly lighter grey instead of blue */
+        switchItem.tintColor = settingsItem.tintColor = dropItem.tintColor = pasteItem.tintColor = BTBarButtonTintColor();
 
         kbSegment = [[UISegmentedControl alloc] initWithItems:[NSArray arrayWithObjects:@"Arrows", @"F-Keys", nil]];
         kbSegment.segmentedControlStyle = UISegmentedControlStyleBar;
+        kbSegment.tintColor = BTBarButtonTintColor();
         kbSegment.selectedSegmentIndex = 0;
         kbSegment.frame = CGRectMake(0, 0, 150, 30);
         [kbSegment addTarget:self action:@selector(layoutChanged:) forControlEvents:UIControlEventValueChanged];
 
         self.navigationItem.backBarButtonItem = [[[UIBarButtonItem alloc] initWithTitle:@"Back"
             style:UIBarButtonItemStyleBordered target:nil action:nil] autorelease];
+        self.navigationItem.backBarButtonItem.tintColor = BTBarButtonTintColor();
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(showKeyboard)
             name:BTShowKeyboardNotification object:nil];
@@ -87,7 +91,7 @@ static UIImage *BTBarIcon(NSString *name) {
 
 - (void)loadView {
     UIView *v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 416)];
-    v.backgroundColor = BTLinenColor();
+    v.backgroundColor = BTBackdropColor();
     v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.view = v;
     [v release];
@@ -107,7 +111,7 @@ static UIImage *BTBarIcon(NSString *name) {
     keyboard.hidden = YES; /* owned by this controller; added to the window over the whole screen when shown */
 
     kbBar = [[UINavigationBar alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
-    kbBar.tintColor = [UIColor colorWithRed:0.21f green:0.27f blue:0.37f alpha:1.0f];
+    kbBar.tintColor = BTBarTintColor();                     /* same dark grey as the main bar */
     UINavigationItem *ki = [[UINavigationItem alloc] initWithTitle:@""];
     ki.titleView = kbSegment; /* [ Arrows | F-Keys ] */
     ki.leftBarButtonItem = dropItem;
@@ -244,7 +248,7 @@ static UIImage *BTBarIcon(NSString *name) {
 - (void)pasteStateChanged {
     BOOL pasting = [keyboard isPasting];
     pasteItem.title = pasting ? @"Stop" : @"Paste";
-    pasteItem.tintColor = pasting ? [UIColor colorWithRed:0.78f green:0.12f blue:0.12f alpha:1.0f] : nil;
+    pasteItem.tintColor = pasting ? [UIColor colorWithRed:0.78f green:0.12f blue:0.12f alpha:1.0f] : BTBarButtonTintColor();
 }
 
 /* ---------------------------------------------------------------- status and PIN */

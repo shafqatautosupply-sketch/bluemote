@@ -122,12 +122,8 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
 /* ======================================================================== remote body (aluminium) */
 
-/* D-pad style: the page draws one aluminium block behind the D-pad and the remote, so the body draws nothing.
-   Trackpad style: the body is its own aluminium slab with an etched border, separate from the trackpad above. */
-@interface RemoteBody : UIView {
-    BOOL drawsSlab;
-}
-- (void)setDrawsSlab:(BOOL)s;
+/* transparent holder for the remote buttons; the metal behind it is drawn once by the page (see AluminiumBlock) */
+@interface RemoteBody : UIView
 @end
 @implementation RemoteBody
 - (id)initWithFrame:(CGRect)f {
@@ -135,16 +131,20 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
-        self.contentMode = UIViewContentModeRedraw;      /* it shrinks / grows: redraw so the rounded corners stay round */
     }
     return self;
 }
-- (void)setDrawsSlab:(BOOL)s { if (s != drawsSlab) { drawsSlab = s; [self setNeedsDisplay]; } }
-- (void)drawRect:(CGRect)rect { if (drawsSlab) BTDrawPanel(self.bounds, 14.0f); }
 @end
 
-/* the single aluminium block behind D-pad and remote */
-@interface AluminiumBlock : UIView
+/* The single aluminium block behind everything on the page. Its frame is always the whole page and the metal is always
+   inset 4 pt, in both styles, so switching styles never changes its size or position.
+   D-pad style: a slab with the etched border near its edge.
+   Pad style (trackpad / Reels): a full-page unibody exactly like the main Trackpad page. Its size never changes, so the
+   brushed finish stays put while the etched sections on top of it grow and shrink. */
+@interface AluminiumBlock : UIView {
+    BOOL unibody;
+}
+- (void)setUnibody:(BOOL)u;
 @end
 @implementation AluminiumBlock
 - (id)initWithFrame:(CGRect)f {
@@ -157,7 +157,12 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     }
     return self;
 }
-- (void)drawRect:(CGRect)rect { BTDrawPanel(self.bounds, 14.0f); }
+- (void)setUnibody:(BOOL)u { if (u != unibody) { unibody = u; [self setNeedsDisplay]; } }
+- (void)drawRect:(CGRect)rect {
+    CGRect slab = CGRectInset(self.bounds, 4.0f, 4.0f);     /* same size and position in both styles, so a flip never resizes it */
+    if (unibody) BTDrawUnibody(slab, 14.0f);
+    else         BTDrawPanel(slab, 14.0f);
+}
 @end
 
 /* ======================================================================== round remote button */
@@ -282,7 +287,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGRect wall, r;
     BTKeyFrames(self.bounds, &wall, &r, NO);                                 /* the rocker face stays level; only the pressed half dips */
-    UIBezierPath *cap = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(r, 0.5f, 0.5f) cornerRadius:BT_KEY_RADIUS];
+    UIBezierPath *cap = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(r, 0.5f, 0.5f) cornerRadius:BTKeyRadius(r)];
 
     BTKeyDrawWall(c, cs, wall, NO);
     BTKeyDrawFace(c, cs, r, NO, NO);
@@ -573,8 +578,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 }
 
 - (void)drawRect:(CGRect)rect {
-    BTDrawPanel(self.bounds, 14.0f);
-    if (showHelp) {
+    if (showHelp) {                                  /* the aluminium and the etched pad are behind this view */
         BTDrawHelpCard(self.bounds, reelsOn
             ? @"Reels / Shorts\nTap: next video\nDouble-tap: previous video\nHold: Back\nTwo-finger drag up / down: volume\nTwo-finger tap: play / pause"
             : @"Swipe: arrow keys (keep dragging to repeat)\nTap: OK   Hold: Back\nTwo-finger tap: play / pause\nTwo-finger drag up / down: volume\nTwo-finger swipe left / right: previous / next\nTwo-finger hold: Home   Three-finger tap: mute");
@@ -740,11 +744,18 @@ static const char *kRemoteCmds[10] = {
 - (id)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = BTLinenColor();
+        self.backgroundColor = BTBackdropColor();
 
-        chassis = [[AluminiumBlock alloc] initWithFrame:CGRectZero];            /* D-pad style: one block behind pad + remote */
+        chassis = [[AluminiumBlock alloc] initWithFrame:CGRectZero];            /* one block behind pad + remote */
         [self addSubview:chassis];
         [chassis release];
+
+        padBox = [[BTEtchedBoxView alloc] initWithRadius:10.0f recessed:YES];   /* pad style: the sections are etched into the block */
+        remoteBox = [[BTEtchedBoxView alloc] initWithRadius:10.0f recessed:NO];
+        [self addSubview:padBox];
+        [self addSubview:remoteBox];
+        [padBox release];
+        [remoteBox release];
 
         panel = [[MediaPanel alloc] initWithFrame:CGRectZero];
         dpad = [[DPadView alloc] initWithFrame:CGRectZero];
@@ -800,17 +811,30 @@ static const char *kRemoteCmds[10] = {
 
 - (void)layoutSubviews {
     CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-    CGFloat m = 8.0f;
-    CGFloat pad = 16.0f, bs = 44.0f, gap = 8.0f;                          /* inside the etched border: square keys on an even grid */
+    CGFloat bs = 44.0f, gap = 8.0f;
     BOOL collapsed = (expanded && gesturePad);                            /* expanded: only the Back / Home / Menu row is left */
-    CGFloat remoteH = collapsed ? (bs + 2 * pad) : (3 * bs + 2 * gap + 2 * pad);
-    CGRect remote = CGRectMake(m, h - remoteH - m, w - 2 * m, remoteH);
-    CGRect box;
-    if (gesturePad) {                                                     /* trackpad: its own slab, separate from the remote slab */
-        box = CGRectMake(m, m, w - 2 * m, h - remoteH - 3 * m);
-        chassis.frame = CGRectZero;
-    } else {                                                              /* D-pad: pad and remote share one aluminium block */
-        chassis.frame = CGRectMake(m, m, w - 2 * m, h - 2 * m);
+    CGRect box, remote;
+    CGFloat pad;                                                          /* space between the remote's edge and its buttons */
+    if (gesturePad) {
+        /* Pad style (trackpad / Reels): one unibody for the whole page, like the main Trackpad page. The pad and the
+           remote are separate sections etched into it. The block itself never changes size, so expanding / collapsing
+           only moves the etched borders and the brushed finish stays exactly as it is. */
+        const CGFloat margin = 4.0f, etch = 8.0f, section = 8.0f;
+        pad = 8.0f;
+        chassis.frame = self.bounds;
+        CGRect inner = CGRectInset(CGRectMake(margin, margin, w - 2 * margin, h - 2 * margin), etch, etch);
+        CGFloat remoteH = collapsed ? (bs + 2 * pad) : (3 * bs + 2 * gap + 2 * pad);
+        remote = CGRectMake(inner.origin.x, CGRectGetMaxY(inner) - remoteH, inner.size.width, remoteH);
+        box = CGRectMake(inner.origin.x, inner.origin.y, inner.size.width, remote.origin.y - section - inner.origin.y);
+        padBox.frame = box;
+        remoteBox.frame = remote;
+    } else {
+        /* D-pad style: pad and remote share one aluminium block */
+        const CGFloat m = 8.0f;
+        pad = 16.0f;
+        CGFloat remoteH = 3 * bs + 2 * gap + 2 * pad;
+        remote = CGRectMake(m, h - remoteH - m, w - 2 * m, remoteH);
+        chassis.frame = self.bounds;                                      /* identical to the pad style: no size change on the flip */
         box = CGRectMake(m, m, w - 2 * m, remote.origin.y - m);
     }
     panel.frame = box;
@@ -841,8 +865,9 @@ static const char *kRemoteCmds[10] = {
     BOOL useDpad = (padMode == 0 && !reelsOn);                          /* Reels shows a plain pad, like the trackpad */
     dpad.hidden = !useDpad;
     panel.hidden = useDpad;
-    chassis.hidden = !useDpad;
-    [(RemoteBody *)remoteBody setDrawsSlab:!useDpad];                   /* trackpad style: the remote is its own slab */
+    [(AluminiumBlock *)chassis setUnibody:!useDpad];                    /* pad style: unibody with etched sections; D-pad: slab */
+    padBox.hidden = useDpad;
+    remoteBox.hidden = useDpad;
     expandB.hidden = useDpad;                                           /* expand is only for the trackpad-style pad */
     gesturePad = !useDpad;                                              /* the D-pad always shows the full remote; the saved choice is kept */
     [self setNeedsLayout];
@@ -875,10 +900,12 @@ static const char *kRemoteCmds[10] = {
     [expandB setTitle:[NSString stringWithUTF8String:(expanded ? "\xE2\x96\xB2" : "\xE2\x96\xBC")] forState:UIControlStateNormal];
     UIViewAnimationOptions o = UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState |
                                UIViewAnimationOptionAllowUserInteraction;
-    /* the remote block shrinks and the pad grows into the space */
+    /* The aluminium block is not touched: only the etched borders (live layers, not bitmaps) and the pad move, so the
+       brushed finish cannot change or shimmer. The help card is drawn, not a layer, so it waits until the move is done. */
+    [panel setShowHelp:NO];
     [UIView animateWithDuration:0.38 delay:0.0 options:o
         animations:^{ [self setNeedsLayout]; [self layoutIfNeeded]; }
-        completion:nil];
+        completion:^(BOOL finished) { [panel setShowHelp:helpOn]; }];
     /* the extra buttons fade out quickly when collapsing, and come back after the block has grown again */
     [UIView animateWithDuration:0.18 delay:(expanded ? 0.0 : 0.20) options:o
         animations:^{ [self setExtrasAlpha:(expanded ? 0.0f : 1.0f)]; }
@@ -895,11 +922,30 @@ static const char *kRemoteCmds[10] = {
     [[NSNotificationCenter defaultCenter] postNotificationName:BTShowKeyboardNotification object:nil];
 }
 
+/* Reels on / off flips the page the same way Trackpad <-> Media does (right when turning on, back left when off). */
+- (void)flipReels {
+    BOOL on = !reelsOn;
+    [[NSUserDefaults standardUserDefaults] setBool:on forKey:kPrefReelsOn];
+    UIViewAnimationOptions o = on ? UIViewAnimationOptionTransitionFlipFromRight : UIViewAnimationOptionTransitionFlipFromLeft;
+    [UIView transitionWithView:self duration:0.55 options:o
+        animations:^{
+            /* Everything is moved to its final place with animations OFF. Inside a transition the key frames would
+               otherwise slide from the old layout to the new one over the length of the flip, and land with a visible
+               snap when it ends. */
+            [UIView setAnimationsEnabled:NO];
+            [self reloadSettings];
+            [self layoutIfNeeded];
+            [UIView setAnimationsEnabled:YES];
+        }
+        completion:nil];
+}
+
 - (void)remoteTapped:(UIControl *)b {
     if (b.tag == 10) {
-        reelsOn = !reelsOn;
-        [[NSUserDefaults standardUserDefaults] setBool:reelsOn forKey:kPrefReelsOn];
-        [self reloadSettings];
+        /* Start the flip on the next run loop pass: by then the tapped key has let go of its pressed look, so the flip
+           never starts from (or lands on) a half-pressed key. */
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flipReels) object:nil];
+        [self performSelector:@selector(flipReels) withObject:nil afterDelay:0.0];
         return;
     }
     if (b.tag >= 0 && b.tag < 10) bluemote_send(kRemoteCmds[b.tag]);

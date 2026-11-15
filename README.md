@@ -29,6 +29,9 @@ targets the iOS 6.1 SDK, `armv7`, minimum iOS 6.0, and the Bluetooth code drives
   of BTstack it builds on does not carry over.
 * A jailbreak is required: the daemon runs as root and takes the Bluetooth chip away from iOS while the app is open.
 
+**Other phones / iOS versions:** the app shows an *Untested device* warning once per model + iOS version and only starts
+Bluetooth if you tap **Continue**. Nothing is blocked; it just tells you it has not been tested.
+
 **Host (the TV or computer you control):** anything that accepts a standard Bluetooth HID keyboard, mouse and consumer
 control (media keys). Developed against **Android TV / Google TV** (including Gboard on the TV).
 
@@ -85,7 +88,7 @@ Gboard suggestion; *Enter* = keyboard Enter, fallback), Reels method and directi
 
 ### Screens
 
-The trackpad, media pad and D-pad backdrop share one horizontally brushed aluminium slab. This is a render of that drawing
+The trackpad, media pad and D-pad backdrop share one vertically brushed aluminium slab. This is a render of that drawing
 code (left: slab, right: with a mock D-pad ring), not a device screenshot:
 
 <p align="center"><img src="docs/images/slab-preview.png" width="520" alt="Brushed aluminium slab preview"></p>

@@ -45,7 +45,7 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
 - (UISegmentedControl *)segmentWithItems:(NSArray *)items selected:(NSInteger)sel tag:(int)tag width:(CGFloat)w {
     UISegmentedControl *s = [[[UISegmentedControl alloc] initWithItems:items] autorelease];
     s.segmentedControlStyle = UISegmentedControlStyleBar;      /* native height is 30 pt, so the end caps are not stretched */
-    s.tintColor = [UIColor colorWithRed:0.21f green:0.27f blue:0.37f alpha:1.0f];   /* same blue-grey as the nav bar */
+    s.tintColor = BTBarButtonTintColor();                      /* same grey as the nav bar buttons */
     s.frame = CGRectMake(0, 0, w, 30);
     s.selectedSegmentIndex = sel;
     s.tag = tag;

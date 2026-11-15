@@ -6,7 +6,9 @@
 @interface MediaView : UIView {
     MediaPanel *panel;
     DPadView *dpad;
-    UIView *chassis;        /* D-pad style: one aluminium block behind the pad and the remote */
+    UIView *chassis;        /* one aluminium block behind the pad and the remote (slab for the D-pad, unibody for the pad) */
+    UIView *padBox;         /* pad style: etched, recessed section the gesture pad sits in */
+    UIView *remoteBox;      /* pad style: etched section around the remote buttons */
     UIView *remoteBody;
     UIButton *infoB;
     UIButton *kbB;
