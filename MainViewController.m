@@ -6,11 +6,29 @@
 #import "SettingsViewController.h"
 #import "UIHelpers.h"
 
+/* The bar icon PNGs are solid black; recolor them to match the white "Trackpad" title text. */
+static UIColor *BTBarIconColor(void) { return [UIColor whiteColor]; }
+
+static UIImage *BTBarIcon(NSString *name) {
+    UIImage *img = [UIImage imageNamed:name];
+    if (!img) return nil;
+    CGRect r = CGRectMake(0, 0, img.size.width, img.size.height);
+    UIGraphicsBeginImageContextWithOptions(img.size, NO, img.scale);
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    [img drawInRect:r];
+    CGContextSetBlendMode(c, kCGBlendModeSourceIn); /* keep the glyph's shape, replace its color */
+    [BTBarIconColor() setFill];
+    CGContextFillRect(c, r);
+    UIImage *out = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return out;
+}
+
 @implementation MainViewController
 
 - (UIBarButtonItem *)barItemImage:(NSString *)image action:(SEL)action {
-    return [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:image]
-                                            style:UIBarButtonItemStyleBordered target:self action:action];
+    return [[UIBarButtonItem alloc] initWithImage:BTBarIcon(image)
+        style:UIBarButtonItemStyleBordered target:self action:action];
 }
 
 - (id)init {
@@ -20,12 +38,12 @@
         baseMode = (int)[[NSUserDefaults standardUserDefaults] integerForKey:kPrefBaseMode];
         if (baseMode != 1) baseMode = 0;
 
-        titleView    = [[StatusTitleView alloc] initWithTitle:@"Trackpad"];
-        switchItem   = [self barItemImage:@"bar_media.png" action:@selector(switchMode)];
+        titleView = [[StatusTitleView alloc] initWithTitle:@"Trackpad"];
+        switchItem = [self barItemImage:@"bar_media.png" action:@selector(switchMode)];
         settingsItem = [self barItemImage:@"bar_gear.png" action:@selector(openSettings)];
-        dropItem     = [self barItemImage:@"bar_dropdown.png" action:@selector(hideKeyboard)];
-        pasteItem    = [[UIBarButtonItem alloc] initWithTitle:@"Paste" style:UIBarButtonItemStyleBordered
-                                                       target:self action:@selector(pasteTapped)];
+        dropItem = [self barItemImage:@"bar_dropdown.png" action:@selector(hideKeyboard)];
+        pasteItem = [[UIBarButtonItem alloc] initWithTitle:@"Paste" style:UIBarButtonItemStyleBordered
+            target:self action:@selector(pasteTapped)];
 
         kbSegment = [[UISegmentedControl alloc] initWithItems:[NSArray arrayWithObjects:@"Arrows", @"F-Keys", nil]];
         kbSegment.segmentedControlStyle = UISegmentedControlStyleBar;
@@ -34,12 +52,20 @@
         [kbSegment addTarget:self action:@selector(layoutChanged:) forControlEvents:UIControlEventValueChanged];
 
         self.navigationItem.backBarButtonItem = [[[UIBarButtonItem alloc] initWithTitle:@"Back"
-                                                    style:UIBarButtonItemStyleBordered target:nil action:nil] autorelease];
+            style:UIBarButtonItemStyleBordered target:nil action:nil] autorelease];
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(showKeyboard)
-                                                     name:BTShowKeyboardNotification object:nil];
+            name:BTShowKeyboardNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(pasteStateChanged)
-                                                     name:BTPasteStateNotification object:nil];
+            name:BTPasteStateNotification object:nil];
+
+        /* iOS 6 can shift views around when the system keyboard rises; re-pin the sheet every time */
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(repinKeyboard)
+            name:UIKeyboardWillShowNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(repinKeyboard)
+            name:UIKeyboardDidShowNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(repinKeyboard)
+            name:UIApplicationDidChangeStatusBarFrameNotification object:nil];
     }
     return self;
 }
@@ -65,10 +91,10 @@
     v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.view = v;
     [v release];
-    CGRect b = v.bounds;
 
+    CGRect b = v.bounds;
     trackpad = [[TrackpadView alloc] initWithFrame:b];
-    media    = [[MediaView alloc] initWithFrame:b];
+    media = [[MediaView alloc] initWithFrame:b];
     trackpad.autoresizingMask = media.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     trackpad.hidden = (baseMode != 0);
     media.hidden = (baseMode != 1);
@@ -78,12 +104,12 @@
     [media release];
 
     keyboard = [[KeyboardView alloc] initWithFrame:CGRectMake(0, b.size.height, b.size.width, b.size.height)];
-    keyboard.hidden = YES;                        /* owned by this controller; added over the whole screen when shown */
+    keyboard.hidden = YES; /* owned by this controller; added to the window over the whole screen when shown */
 
     kbBar = [[UINavigationBar alloc] initWithFrame:CGRectMake(0, 0, 320, 44)];
     kbBar.tintColor = [UIColor colorWithRed:0.21f green:0.27f blue:0.37f alpha:1.0f];
     UINavigationItem *ki = [[UINavigationItem alloc] initWithTitle:@""];
-    ki.titleView = kbSegment;                     /* [ Arrows | F-Keys ] */
+    ki.titleView = kbSegment; /* [ Arrows | F-Keys ] */
     ki.leftBarButtonItem = dropItem;
     ki.rightBarButtonItem = pasteItem;
     [kbBar pushNavigationItem:ki animated:NO];
@@ -95,13 +121,13 @@
     [super viewDidLoad];
     [self applyNavAnimated:NO];
     timer = [[NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(tick)
-                                            userInfo:nil repeats:YES] retain];
+        userInfo:nil repeats:YES] retain];
     [self tick];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    [media reloadSettings];                       /* Settings may have changed the media pad */
+    [media reloadSettings]; /* Settings may have changed the media pad */
 }
 
 /* ---------------------------------------------------------------- top bar */
@@ -109,7 +135,7 @@
 - (void)applyNavAnimated:(BOOL)animated {
     UINavigationItem *ni = self.navigationItem;
     [titleView setPageTitle:(baseMode == 0 ? @"Trackpad" : @"Media")];
-    switchItem.image = [UIImage imageNamed:(baseMode == 0 ? @"bar_media.png" : @"bar_trackpad.png")];
+    switchItem.image = BTBarIcon(baseMode == 0 ? @"bar_media.png" : @"bar_trackpad.png");
     ni.titleView = titleView;
     [ni setLeftBarButtonItem:switchItem animated:animated];
     [ni setRightBarButtonItem:settingsItem animated:animated];
@@ -117,7 +143,7 @@
 
 - (void)switchMode {
     UIView *from = (baseMode == 0) ? (UIView *)trackpad : (UIView *)media;
-    UIView *to   = (baseMode == 0) ? (UIView *)media : (UIView *)trackpad;
+    UIView *to = (baseMode == 0) ? (UIView *)media : (UIView *)trackpad;
     UIViewAnimationOptions opts = UIViewAnimationOptionShowHideTransitionViews |
         (baseMode == 0 ? UIViewAnimationOptionTransitionFlipFromRight : UIViewAnimationOptionTransitionFlipFromLeft);
     baseMode = 1 - baseMode;
@@ -136,43 +162,75 @@
 /* ---------------------------------------------------------------- keyboard panel */
 
 /* The keyboard is one solid sheet (its own top bar + keys) that slides over the whole screen.
-   Order: slide up first, then the iOS keyboard appears. Closing: iOS keyboard drops first, then the sheet slides down. */
+   Order: slide up first, then the iOS keyboard appears. Closing: iOS keyboard drops first, then the sheet slides down.
+
+   The sheet lives in the WINDOW (not the navigation controller's view) and is given an explicit frame that
+   starts directly under the status bar. That way it can never be dragged up under the status bar when iOS 6
+   moves things around as the system keyboard appears, and its top bar lines up exactly with the real
+   Trackpad / Media navigation bar. */
+
+- (UIView *)keyboardHost {
+    UIWindow *w = self.view.window;
+    return w ? (UIView *)w : (UIView *)[[UIApplication sharedApplication] keyWindow];
+}
+
+/* Frame of the sheet when fully shown, in the host (window) coordinate space. */
+- (CGRect)keyboardShownFrame {
+    UIApplication *app = [UIApplication sharedApplication];
+    CGRect sb = app.statusBarFrame;
+    CGFloat top = app.statusBarHidden ? 0.0f : MIN(sb.size.width, sb.size.height);
+    CGRect wb = [self keyboardHost].bounds;
+    return CGRectMake(0, top, wb.size.width, wb.size.height - top);
+}
+
+/* Called when the iOS keyboard shows / status bar changes: snap the sheet back to where it belongs. */
+- (void)repinKeyboard {
+    if (keyboardShown && !keyboardAnimating && keyboard.superview) {
+        keyboard.frame = [self keyboardShownFrame];
+    }
+}
+
 - (void)showKeyboard {
     if (keyboardShown || keyboardAnimating) return;
     keyboardShown = YES;
     keyboardAnimating = YES;
-    UIView *host = self.navigationController ? self.navigationController.view : self.view;
-    CGRect hb = host.bounds;                      /* includes the navigation bar, so the sheet covers it too */
+
+    UIView *host = [self keyboardHost];
+    CGRect shown = [self keyboardShownFrame];
     if (keyboard.superview != host) [host addSubview:keyboard];
-    keyboard.frame = CGRectMake(0, hb.size.height, hb.size.width, hb.size.height);
+    keyboard.frame = CGRectOffset(shown, 0, shown.size.height); /* start fully below the screen */
     keyboard.hidden = NO;
     [host bringSubviewToFront:keyboard];
     [self pasteStateChanged];
+
     [UIView animateWithDuration:0.32 delay:0.0 options:UIViewAnimationOptionCurveEaseOut
-                     animations:^{ keyboard.frame = hb; }
-                     completion:^(BOOL finished) {
-                         keyboardAnimating = NO;
-                         if (keyboardShown) [keyboard activate];     /* only now does the iOS keyboard rise */
-                     }];
+        animations:^{ keyboard.frame = shown; }
+        completion:^(BOOL finished) {
+            keyboardAnimating = NO;
+            if (keyboardShown) {
+                keyboard.frame = [self keyboardShownFrame];
+                [keyboard activate]; /* only now does the iOS keyboard rise */
+            }
+        }];
 }
 
 - (void)hideKeyboard {
     if (!keyboardShown || keyboardAnimating) return;
     keyboardShown = NO;
     keyboardAnimating = YES;
-    [keyboard deactivate];                        /* iOS keyboard drops first ... */
+    [keyboard deactivate]; /* iOS keyboard drops first ... */
     [self performSelector:@selector(slideKeyboardDown) withObject:nil afterDelay:0.30];
 }
 
-- (void)slideKeyboardDown {                       /* ... then the sheet slides away */
-    CGRect hb = keyboard.superview ? keyboard.superview.bounds : self.view.bounds;
-    CGRect off = CGRectMake(0, hb.size.height, hb.size.width, hb.size.height);
+- (void)slideKeyboardDown { /* ... then the sheet slides away */
+    CGRect shown = [self keyboardShownFrame];
+    CGRect off = CGRectOffset(shown, 0, shown.size.height);
     [UIView animateWithDuration:0.28 delay:0.0 options:UIViewAnimationOptionCurveEaseIn
-                     animations:^{ keyboard.frame = off; }
-                     completion:^(BOOL finished) {
-                         keyboardAnimating = NO;
-                         if (!keyboardShown) keyboard.hidden = YES;
-                     }];
+        animations:^{ keyboard.frame = off; }
+        completion:^(BOOL finished) {
+            keyboardAnimating = NO;
+            if (!keyboardShown) keyboard.hidden = YES;
+        }];
 }
 
 - (void)layoutChanged:(UISegmentedControl *)seg {
@@ -201,7 +259,7 @@
     if (req != 0 && pinAlert == nil) {
         [self showPinAlert:req];
     } else if (req == 0 && pinAlert != nil) {
-        pinAutoDismiss = YES;                     /* request ended by itself (timeout / pairing finished) */
+        pinAutoDismiss = YES; /* request ended by itself (timeout / pairing finished) */
         [pinAlert dismissWithClickedButtonIndex:[pinAlert cancelButtonIndex] animated:NO];
     }
 }
@@ -213,7 +271,7 @@
         : @"Type the PIN shown on the TV, then tap Pair. If the TV shows no PIN, try 0000.";
     pinAutoDismiss = NO;
     pinAlert = [[UIAlertView alloc] initWithTitle:title message:msg delegate:self
-                                cancelButtonTitle:@"Cancel" otherButtonTitles:@"Pair", nil];
+        cancelButtonTitle:@"Cancel" otherButtonTitles:@"Pair", nil];
     pinAlert.alertViewStyle = UIAlertViewStylePlainTextInput;
     UITextField *tf = [pinAlert textFieldAtIndex:0];
     tf.keyboardType = UIKeyboardTypeNumberPad;
@@ -229,7 +287,7 @@
         return;
     }
     NSString *code = [[[alertView textFieldAtIndex:0] text]
-                      stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if ([code length] == 0) btcombo_send("PINCANCEL");
     else btcombo_sendf("PIN %s", [code UTF8String]);
 }
