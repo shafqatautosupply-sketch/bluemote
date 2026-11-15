@@ -108,6 +108,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
         field.spellCheckingType = UITextSpellCheckingTypeNo;
         field.keyboardAppearance = UIKeyboardAppearanceAlert;
         field.returnKeyType = UIReturnKeyDefault;
+        [field addTarget:self action:@selector(fieldChanged:) forControlEvents:UIControlEventEditingChanged];
         [self addSubview:field];
         [field release];
 
@@ -321,8 +322,16 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
         clean = [clean stringByReplacingOccurrencesOfString:@"\r" withString:@""];
         const char *u = [clean UTF8String];
         if (u && u[0]) bluemote_sendf("TYPEMOD %d %s", m, u);
+        /* Accept the insertion. A field that refuses every change never tells the keyboard its text changed, so a
+           one-shot Shift never switched off again. Accepting it lets iOS apply its normal Shift logic (one letter,
+           caps lock on double tap); fieldChanged: then puts the sentinel back so no text ever piles up. */
+        return YES;
     }
-    return NO;                                  /* keep the sentinel, never store text */
+    return NO;                                  /* Backspace: keep the sentinel */
+}
+
+- (void)fieldChanged:(UITextField *)tf {
+    if (![tf.text isEqualToString:@" "]) tf.text = @" ";   /* programmatic set: no delegate call, no loop */
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)tf {
