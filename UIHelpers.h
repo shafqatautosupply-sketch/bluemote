@@ -19,7 +19,7 @@ void BTSetButtonToggle(UIButton *b, BOOL on, BTButtonStyle offStyle);           
 void BTSetButtonOn(UIButton *b, BOOL on);
 
 UIColor *BTLinenColor(void);                                                                     /* native iOS 6 linen */
-void BTDrawPanel(CGRect rect, CGFloat radius);                                                   /* horizontally brushed aluminium slab (cached) */
+void BTDrawPanel(CGRect rect, CGFloat radius);                                                   /* vertically brushed aluminium slab with etched border (cached) */
 void BTDrawEngravedText(NSString *text, CGRect rect, UIFont *font, NSTextAlignment align);
 
 NSString *BTDeviceDisplayName(NSString *addr);                                                   /* alias / name / fallback */

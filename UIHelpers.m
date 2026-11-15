@@ -116,8 +116,9 @@ UIColor *BTLinenColor(void) {
 
 /* ---- brushed aluminium slab (trackpad, media pad, D-pad backdrop) ----
    Drawn once per size into a cached image (deterministic grain, so it never shimmers), then just blitted.
-   Horizontal brushing: a base metal gradient with a bright sheen band, one random tone per pixel row, thousands of
-   short horizontal streaks, darker left / right edges, a bright top bevel, a shaded bottom lip and a soft drop shadow.
+   Vertical brushing: a base metal gradient with a bright sheen band, one random tone per pixel column, thousands of
+   short vertical streaks, darker left / right edges, a bright top bevel, a shaded bottom lip and a soft drop shadow,
+   plus an etched line border close to the edge (dark groove with a light line under it) that gives the slab look.
    tools/preview_slab.py renders the same algorithm off-device. */
 
 static CGFloat BTRnd(unsigned int *s) {                        /* tiny LCG: same sequence every time */
@@ -154,22 +155,22 @@ static UIImage *BTBrushedSlabImage(CGSize size, CGFloat radius) {
     CGGradientRelease(g);
 
     unsigned int seed = 0x5EED1234u;
-    for (CGFloat y = r.origin.y; y < CGRectGetMaxY(r); y += px) {            /* one random tone per pixel row */
+    for (CGFloat x = r.origin.x; x < CGRectGetMaxX(r); x += px) {            /* one random tone per pixel column */
         CGFloat v = BTRnd(&seed) * 2.0f - 1.0f;
         if (v > 0) CGContextSetRGBFillColor(c, 1, 1, 1, v * 0.09f);
         else       CGContextSetRGBFillColor(c, 0, 0, 0, -v * 0.07f);
-        CGContextFillRect(c, CGRectMake(r.origin.x, y, r.size.width, px));
+        CGContextFillRect(c, CGRectMake(x, r.origin.y, px, r.size.height));
     }
     int streaks = (int)(r.size.width * r.size.height / 60.0f);               /* short bright / dark scratches */
     for (int i = 0; i < streaks; i++) {
         CGFloat t = BTRnd(&seed);
         CGFloat len = 8.0f + t * t * 170.0f;
-        CGFloat x = r.origin.x - len * 0.5f + BTRnd(&seed) * (r.size.width + len * 0.5f);
-        CGFloat y = r.origin.y + floorf(BTRnd(&seed) * r.size.height * scale) * px;
+        CGFloat y = r.origin.y - len * 0.5f + BTRnd(&seed) * (r.size.height + len * 0.5f);
+        CGFloat sx = r.origin.x + floorf(BTRnd(&seed) * r.size.width * scale) * px;
         CGFloat a = 0.04f + BTRnd(&seed) * 0.09f;
         if (BTRnd(&seed) > 0.5f) CGContextSetRGBFillColor(c, 1, 1, 1, a);
         else                     CGContextSetRGBFillColor(c, 0, 0, 0, a);
-        CGContextFillRect(c, CGRectMake(x, y, len, px));
+        CGContextFillRect(c, CGRectMake(sx, y, px, len));
     }
 
     CGFloat edge[8] = { 0, 0, 0, 0.12f, 0, 0, 0, 0.0f };                     /* darker left / right edges */
@@ -187,6 +188,19 @@ static UIImage *BTBrushedSlabImage(CGSize size, CGFloat radius) {
     CGGradientRef lg = CGGradientCreateWithColorComponents(cs, lo, NULL, 2);
     CGContextDrawLinearGradient(c, lg, CGPointMake(0, CGRectGetMaxY(r)), CGPointMake(0, CGRectGetMaxY(r) - 8.0f), 0);
     CGGradientRelease(lg);
+
+    /* etched border close to the edge: a light line under a dark groove */
+    CGRect br = CGRectInset(r, 6.0f, 6.0f);
+    UIBezierPath *bp = [UIBezierPath bezierPathWithRoundedRect:br cornerRadius:MAX(radius - 6.0f, 3.0f)];
+    [bp setLineWidth:1.0f];
+    CGContextSaveGState(c);
+    CGContextTranslateCTM(c, 0, 1.0f);
+    [[UIColor colorWithWhite:1.0f alpha:0.85f] setStroke];
+    [bp stroke];
+    CGContextRestoreGState(c);
+    [[UIColor colorWithWhite:0.22f alpha:0.55f] setStroke];
+    [bp stroke];
+
     CGContextRestoreGState(c);
 
     [[UIColor colorWithWhite:0.30f alpha:1.0f] setStroke];                   /* outer edge */

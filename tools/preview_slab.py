@@ -23,20 +23,29 @@ def grad(stops, t):
     ts = [s[0] for s in stops]
     return np.stack([np.interp(t, ts, [s[1][i] for s in stops]) for i in range(3)], -1)
 
+def cov(d, rad, scale):
+    return np.clip((rad - d)*scale + 0.5, 0, 1)
+
+def stroke_rrect(w, h, rect, r, width, scale, dy=0.0):
+    S = 4
+    m = Image.new("L", (int(w*scale)*S, int(h*scale)*S), 0)
+    d = ImageDraw.Draw(m)
+    x0, y0, x1, y1 = [v*scale*S for v in (rect[0], rect[1]+dy, rect[0]+rect[2], rect[1]+dy+rect[3])]
+    d.rounded_rectangle([x0, y0, x1, y1], radius=r*scale*S, outline=255, width=max(1, int(width*scale*S)))
+    return np.asarray(m.resize((int(w*scale), int(h*scale)), Image.LANCZOS), dtype=np.float32)/255.0
+
 def slab(w, h, radius=14.0, scale=2.0):
     W, H = int(w*scale), int(h*scale)
     px = 1.0/scale
     rx, ry, rw, rh = 2.0, 2.0, w-4.0, h-5.0
     mask = rrect_mask(w, h, radius, (rx, ry, rw, rh), scale)
     out = np.zeros((H, W, 4), np.float32)
-    # drop shadow
     sh = Image.fromarray((mask*255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.0*scale))
     sh = np.roll(np.asarray(sh, np.float32)/255.0, int(1.5*scale), axis=0)
     out[..., 3] = sh*0.45
-    # base gradient (clipped later)
-    y = (np.arange(H)[:, None]/scale - ry)/rh
-    t = np.clip(y, 0, 1)
-    base = grad([(0, (.90,.91,.93)), (.22, (.97,.97,.985)), (.52, (.80,.81,.84)), (1, (.66,.67,.71))], t[:, 0])
+    # base: top->bottom metal gradient with a bright sheen band
+    t = np.clip((np.arange(H)/scale - ry)/rh, 0, 1)
+    base = grad([(0, (.90,.91,.93)), (.22, (.97,.97,.985)), (.52, (.80,.81,.84)), (1, (.66,.67,.71))], t)
     tex = np.repeat(base[:, None, :], W, axis=1).copy()
     def blend(x0, y0, ww, hh, col, a):
         ix0, ix1 = max(int(round(x0*scale)), 0), min(int(round((x0+ww)*scale)), W)
@@ -44,20 +53,20 @@ def slab(w, h, radius=14.0, scale=2.0):
         if ix1 <= ix0 or iy1 <= iy0: return
         tex[iy0:iy1, ix0:ix1] = tex[iy0:iy1, ix0:ix1]*(1-a) + np.array(col)*a
     rnd = lcg(0x5EED1234)
-    yy = ry
-    while yy < ry+rh:
+    xx_ = rx
+    while xx_ < rx+rw:                                    # one random tone per pixel column (vertical brushing)
         v = rnd()*2-1
-        if v > 0: blend(rx, yy, rw, px, (1,1,1), v*0.09)
-        else:     blend(rx, yy, rw, px, (0,0,0), -v*0.07)
-        yy += px
+        if v > 0: blend(xx_, ry, px, rh, (1,1,1), v*0.09)
+        else:     blend(xx_, ry, px, rh, (0,0,0), -v*0.07)
+        xx_ += px
     n = int(rw*rh/60.0)
-    for _ in range(n):
+    for _ in range(n):                                    # short vertical scratches
         tt = rnd(); ln = 8.0 + tt*tt*170.0
-        x = rx - ln*0.5 + rnd()*(rw+ln*0.5)
-        yv = ry + np.floor(rnd()*rh*scale)*px
+        y = ry - ln*0.5 + rnd()*(rh+ln*0.5)
+        xv = rx + np.floor(rnd()*rw*scale)*px
         a = 0.04 + rnd()*0.09
         col = (1,1,1) if rnd() > 0.5 else (0,0,0)
-        blend(x, yv, ln, px, col, a)
+        blend(xv, y, px, ln, col, a)
     # edge falloff left/right, top highlight, bottom shade
     xs = np.arange(W)/scale
     e = np.clip(1 - (xs-rx)/22.0, 0, 1) + np.clip(1 - ((rx+rw)-xs)/22.0, 0, 1)
@@ -67,10 +76,15 @@ def slab(w, h, radius=14.0, scale=2.0):
     tex = tex*(1-hi) + hi
     lo = np.clip(1 - ((ry+rh)-ys)/8.0, 0, 1)[:, None, None]*0.22
     tex = tex*(1-lo)
+    # etched border close to the edge: dark groove with a light line just below it
+    br = (rx+6.0, ry+6.0, rw-12.0, rh-12.0)
+    light = stroke_rrect(w, h, br, max(radius-6.0, 3.0), 1.0, scale, dy=1.0)[..., None]
+    dark = stroke_rrect(w, h, br, max(radius-6.0, 3.0), 1.0, scale)[..., None]
+    tex = tex*(1-light*0.85) + light*0.85
+    tex = tex*(1-dark*0.55) + 0.22*dark*0.55
     a = mask[..., None]
     rgb = tex*a + out[..., :3]*(1-a)
     al = a[..., 0] + out[..., 3]*(1-a[..., 0])
-    # outer 1px stroke 0.30
     edge = mask - np.asarray(Image.fromarray((mask*255).astype(np.uint8)).filter(ImageFilter.MinFilter(3)), np.float32)/255.0
     rgb = rgb*(1-edge[..., None]*0.9) + 0.30*edge[..., None]*0.9
     return np.dstack([rgb, al])

@@ -27,28 +27,33 @@ def pil_mask(draw_fn, ss=2):
     draw_fn(ImageDraw.Draw(m), ss)
     return np.asarray(m.resize((N, N), Image.LANCZOS), np.float32) / 255.0
 
-# ---------- 1. blue enamel background ----------
-img = vgrad([(0, (0.40, 0.66, 0.97)), (0.5, (0.17, 0.43, 0.88)), (1, (0.04, 0.20, 0.56))], 0, N)
-glow = np.exp(-(((xx - 512) / 620) ** 2 + ((yy - 140) / 420) ** 2))
-img = img + glow[..., None] * np.array([0.10, 0.12, 0.10], np.float32)
-# fine linen-ish enamel grain
-img += (blur(rng.standard_normal((N, N)).astype(np.float32), 0.8) * 0.012)[..., None]
+# ---------- 1. solid, vertically brushed aluminium background ----------
+norm = lambda a: a / (a.std() + 1e-6)
+def brushed_v(seed_rng):
+    """Vertical brushing at several scales. The 1024 master is shrunk up to 18x for the home-screen icon, so a 1 px grain
+    vanishes; the wide / medium streaks (sigma_x 3..18 px) are what is still visible at 57 / 29 px."""
+    def layer(sy, sx):
+        n = seed_rng.standard_normal((N, N)).astype(np.float32)
+        return norm(gaussian_filter(n, (sy, sx)))
+    fine   = layer(60, 0.9)       # 1 px hairlines
+    medium = layer(110, 3.0)      # visible at 114 px
+    wide   = layer(240, 9.0)      # visible at 57 px
+    broad  = layer(420, 22.0)     # visible at 29 px
+    return 0.40 * fine + 0.60 * medium + 0.55 * wide + 0.22 * broad
+bg_base = 0.80 + 0.04 * np.exp(-(((xx - 512) / 700) ** 2))          # flat, very slight centre lift (solid look)
+bg_metal = np.clip(bg_base + brushed_v(rng) * 0.085, 0, 1)
+img = np.stack([bg_metal * 0.985, bg_metal * 0.99, bg_metal * 1.0], -1).astype(np.float32)
 
 # ---------- 2. brushed aluminium D-pad disc ----------
-cx, cy, R = 512, 548, 372
+cx, cy, R = 512, 512, 372
 disc = circle_a(cx, cy, R)
 shadow = np.roll(blur(disc, 22), 26, axis=0) * 0.62
-img = over(img, (0.0, 0.03, 0.12), shadow)
+img = over(img, (0.05, 0.05, 0.06), shadow)
 
 t = np.clip((yy - (cy - R)) / (2 * R), 0, 1)
 base = np.stack([np.interp(t, [0, .25, .5, .75, 1], v) for v in
-                 ([.90, .98, .82, .74, .66], [.91, .98, .83, .75, .67], [.94, 1.0, .87, .79, .72])], -1)
-long_s = gaussian_filter1d(rng.standard_normal((N, N)).astype(np.float32), 55, axis=1)
-fine_s = gaussian_filter1d(rng.standard_normal((N, N)).astype(np.float32), 9, axis=1)
-rows = gaussian_filter1d(rng.standard_normal(N).astype(np.float32), 0.7)[:, None] * np.ones((1, N), np.float32)
-norm = lambda a: a / (a.std() + 1e-6)
-grain = 0.5 * norm(long_s) + 0.35 * norm(fine_s) + 0.35 * norm(rows)
-metal = np.clip(base + (grain * 0.060)[..., None], 0, 1)
+                 ([.93, 1.0, .86, .78, .70], [.94, 1.0, .87, .79, .71], [.96, 1.0, .90, .82, .75])], -1)
+metal = np.clip(base, 0, 1)            # ring is smooth polished metal: no brushing (the background keeps it)
 img = over(img, metal.reshape(N, N, 3), disc)
 
 d = np.hypot(xx - cx, yy - cy)
