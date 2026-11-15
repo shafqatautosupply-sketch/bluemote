@@ -28,6 +28,7 @@
         self.multipleTouchEnabled = YES;
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;
         startPoints = [[NSMutableDictionary alloc] init];
     }
     return self;
@@ -44,7 +45,7 @@
 }
 
 - (void)drawRect:(CGRect)rect {
-    BTDrawPanel(self.bounds, 14.0f);
+    BTDrawEtchedBox(self.bounds, 10.0f, YES);                       /* the pad: its own etched section of the body */
     if (showHelp) {
         BTDrawHelpCard(self.bounds, @"Drag: move the cursor\nTap: click\nTwo-finger tap: right click / Back\nTwo-finger drag: scroll in any direction\nTap, then touch and drag: drag & drop");
     }
@@ -194,6 +195,7 @@
     self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = BTLinenColor();
+        self.contentMode = UIViewContentModeRedraw;
         surface = [[TrackpadSurface alloc] initWithFrame:CGRectZero];
         [self addSubview:surface];
         [surface release];
@@ -202,14 +204,14 @@
         [infoB addTarget:self action:@selector(infoTapped) forControlEvents:UIControlEventTouchUpInside];
         [surface addSubview:infoB];
 
-        kbB = BTMakeStyledButton(nil, BTStyleGray, self, @selector(keyboardTapped));   /* small keyboard button */
+        kbB = BTMakeKeyButton(nil, self, @selector(keyboardTapped));   /* small keyboard button */
         [kbB setImage:[UIImage imageNamed:@"glyph_keyboard.png"] forState:UIControlStateNormal];
         [surface addSubview:kbB];
 
-        leftB  = BTMakeButton(@"Left",  self, @selector(leftTapped));
-        rightB = BTMakeButton(@"Right", self, @selector(rightTapped));
-        backB  = BTMakeButton(@"Back",  self, @selector(backTapped));
-        homeB  = BTMakeButton(@"Home",  self, @selector(homeTapped));
+        leftB = BTMakeKeyButton(@"Left", self, @selector(leftTapped));
+        rightB = BTMakeKeyButton(@"Right", self, @selector(rightTapped));
+        backB = BTMakeKeyButton(@"Back", self, @selector(backTapped));
+        homeB = BTMakeKeyButton(@"Home", self, @selector(homeTapped));
         [self addSubview:leftB];
         [self addSubview:rightB];
         [self addSubview:backB];
@@ -218,20 +220,35 @@
     return self;
 }
 
+/* Unibody: one brushed-aluminium block for the whole page. The pad and the key row are separate sections etched into it. */
+#define TP_MARGIN 4.0f
+
 - (void)layoutSubviews {
     CGFloat w = self.bounds.size.width;
     CGFloat h = self.bounds.size.height;
-    CGFloat pad = 8.0f, bh = 44.0f;
-    surface.frame = CGRectMake(pad, pad, w - 2 * pad, h - 3 * pad - bh);
+    CGFloat etch = 8.0f, gap = 8.0f, bh = 44.0f, kpad = 8.0f;
+    CGRect inner = CGRectInset(CGRectMake(TP_MARGIN, TP_MARGIN, w - 2 * TP_MARGIN, h - 2 * TP_MARGIN), etch, etch);
+    CGFloat boxH = bh + 2 * kpad;
+    CGRect box = CGRectMake(inner.origin.x, CGRectGetMaxY(inner) - boxH, inner.size.width, boxH);
+    if (!CGRectEqualToRect(box, buttonBox)) { buttonBox = box; [self setNeedsDisplay]; }
+
+    surface.frame = CGRectMake(inner.origin.x, inner.origin.y, inner.size.width, box.origin.y - gap - inner.origin.y);
     infoB.frame = CGRectMake(6, 6, 30, 30);
     kbB.frame = CGRectMake(surface.bounds.size.width - 6 - 42, 8, 42, 30);
-    CGFloat bw = (w - 5 * pad) / 4.0f;
-    CGFloat y = h - pad - bh;
-    leftB.frame  = CGRectMake(pad, y, bw, bh);
-    rightB.frame = CGRectMake(2 * pad + bw, y, bw, bh);
-    backB.frame  = CGRectMake(3 * pad + 2 * bw, y, bw, bh);
-    homeB.frame  = CGRectMake(4 * pad + 3 * bw, y, bw, bh);
+    CGFloat kgap = 8.0f;
+    CGFloat bw = (box.size.width - 2 * kpad - 3 * kgap) / 4.0f;
+    CGFloat y = box.origin.y + kpad;
+    UIView *keys[4] = { leftB, rightB, backB, homeB };
+    for (int i = 0; i < 4; i++) {
+        keys[i].frame = CGRectMake(box.origin.x + kpad + i * (bw + kgap), y, bw, bh);
+    }
     [surface setNeedsDisplay];
+}
+
+- (void)drawRect:(CGRect)rect {
+    CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
+    BTDrawUnibody(CGRectMake(TP_MARGIN, TP_MARGIN, w - 2 * TP_MARGIN, h - 2 * TP_MARGIN), 14.0f);
+    BTDrawEtchedBox(buttonBox, 10.0f, NO);                          /* the key section */
 }
 
 - (void)infoTapped {

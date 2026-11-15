@@ -22,6 +22,24 @@ UIColor *BTLinenColor(void);                                                    
 void BTDrawPanel(CGRect rect, CGFloat radius);                                                   /* vertically brushed aluminium slab with etched border (cached) */
 void BTDrawEngravedText(NSString *text, CGRect rect, UIFont *font, NSTextAlignment align);
 
+void BTDrawUnibody(CGRect rect, CGFloat radius);                                                 /* brushed slab, no built-in border: sections are etched into it */
+void BTDrawBrushedFill(CGRect rect);                                                             /* full-bleed brushed aluminium (keyboard sheet background) */
+void BTDrawEtchedBox(CGRect rect, CGFloat radius, BOOL recessed);                                /* etched section border (groove + light line), optional soft recess */
+
+/* ---- machined aluminium key: square, round corners, smooth face on a dark side wall. Used by every key in the app. ---- */
+#define BT_KEY_RADIUS 10.0f
+#define BT_KEY_DEPTH  3.0f
+void BTKeyFrames(CGRect bounds, CGRect *wall, CGRect *face, BOOL down);
+void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue);
+void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, BOOL blue);
+
+@interface BTKeyButton : UIButton {
+    BOOL toggled;
+}
+- (void)setToggled:(BOOL)t;                                                                      /* anodised blue when on */
+@end
+UIButton *BTMakeKeyButton(NSString *title, id target, SEL action);
+
 NSString *BTDeviceDisplayName(NSString *addr);                                                   /* alias / name / fallback */
 
 void BTDrawDarkPanel(CGRect rect, CGFloat radius);                                               /* remote-control body */

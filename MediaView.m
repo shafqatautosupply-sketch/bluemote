@@ -24,7 +24,7 @@ static void RTri(CGContextRef c, CGFloat cx, CGFloat cy, CGFloat s, BOOL right) 
 /* draws a glyph with the CURRENT fill and stroke colours */
 static void RemoteGlyph(CGContextRef c, int g, CGRect r) {
     CGFloat mx = CGRectGetMidX(r), my = CGRectGetMidY(r);
-    CGFloat s = MIN(r.size.width, r.size.height) * 0.20f;
+    CGFloat s = MIN(r.size.width, r.size.height) * 0.22f;
     CGContextSetLineWidth(c, 2.4f);
     CGContextSetLineCap(c, kCGLineCapRound);
     CGContextSetLineJoin(c, kCGLineJoinRound);
@@ -94,16 +94,17 @@ static void RemoteGlyph(CGContextRef c, int g, CGRect r) {
     }
 }
 
-/* the glyph with a dark "debossed" shadow under a white face */
-static void RemoteDrawGlyphFace(CGContextRef c, int g, CGRect r, CGFloat alpha) {
+/* the glyph engraved into the metal: a white highlight one point below a dark grey cut.
+   dark = NO draws a white face with a dark shadow instead (used on the blue anodised key) */
+static void RemoteDrawGlyphEngraved(CGContextRef c, int g, CGRect r, BOOL dark) {
     CGContextSaveGState(c);
     CGContextTranslateCTM(c, 0, 1.0f);
-    CGContextSetRGBFillColor(c, 0, 0, 0, 0.65f);
-    CGContextSetRGBStrokeColor(c, 0, 0, 0, 0.65f);
+    if (dark) { CGContextSetRGBFillColor(c, 1, 1, 1, 0.90f); CGContextSetRGBStrokeColor(c, 1, 1, 1, 0.90f); }
+    else      { CGContextSetRGBFillColor(c, 0, 0, 0, 0.55f); CGContextSetRGBStrokeColor(c, 0, 0, 0, 0.55f); }
     RemoteGlyph(c, g, r);
     CGContextRestoreGState(c);
-    CGContextSetRGBFillColor(c, 1, 1, 1, alpha);
-    CGContextSetRGBStrokeColor(c, 1, 1, 1, alpha);
+    if (dark) { CGContextSetRGBFillColor(c, 0.28f, 0.29f, 0.33f, 1.0f); CGContextSetRGBStrokeColor(c, 0.28f, 0.29f, 0.33f, 1.0f); }
+    else      { CGContextSetRGBFillColor(c, 1, 1, 1, 0.96f); CGContextSetRGBStrokeColor(c, 1, 1, 1, 0.96f); }
     RemoteGlyph(c, g, r);
 }
 
@@ -119,9 +120,14 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     CGContextFillPath(c);
 }
 
-/* ======================================================================== remote body (dark plastic) */
+/* ======================================================================== remote body (aluminium) */
 
-@interface RemoteBody : UIView
+/* D-pad style: the page draws one aluminium block behind the D-pad and the remote, so the body draws nothing.
+   Trackpad style: the body is its own aluminium slab with an etched border, separate from the trackpad above. */
+@interface RemoteBody : UIView {
+    BOOL drawsSlab;
+}
+- (void)setDrawsSlab:(BOOL)s;
 @end
 @implementation RemoteBody
 - (id)initWithFrame:(CGRect)f {
@@ -133,7 +139,25 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     }
     return self;
 }
-- (void)drawRect:(CGRect)rect { BTDrawDarkPanel(self.bounds, 16.0f); }
+- (void)setDrawsSlab:(BOOL)s { if (s != drawsSlab) { drawsSlab = s; [self setNeedsDisplay]; } }
+- (void)drawRect:(CGRect)rect { if (drawsSlab) BTDrawPanel(self.bounds, 14.0f); }
+@end
+
+/* the single aluminium block behind D-pad and remote */
+@interface AluminiumBlock : UIView
+@end
+@implementation AluminiumBlock
+- (id)initWithFrame:(CGRect)f {
+    self = [super initWithFrame:f];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+        self.userInteractionEnabled = NO;
+        self.contentMode = UIViewContentModeRedraw;
+    }
+    return self;
+}
+- (void)drawRect:(CGRect)rect { BTDrawPanel(self.bounds, 14.0f); }
 @end
 
 /* ======================================================================== round remote button */
@@ -165,46 +189,23 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     CGContextRef c = UIGraphicsGetCurrentContext();
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     BOOL down = self.highlighted;
-    CGRect r = CGRectInset(self.bounds, 2.0f, 2.0f);
+    CGRect wall, face;
+    BTKeyFrames(self.bounds, &wall, &face, down);
 
-    [[UIColor colorWithWhite:1.0f alpha:0.16f] setFill];                    /* light lip under the button */
-    CGContextFillEllipseInRect(c, CGRectOffset(r, 0, 1.0f));
-
-    CGContextSaveGState(c);
-    CGContextAddEllipseInRect(c, r);
-    CGContextClip(c);
-    CGFloat normal[8]  = { 0.46f, 0.47f, 0.50f, 1.0f, 0.05f, 0.05f, 0.07f, 1.0f };
-    CGFloat pressed[8] = { 0.08f, 0.08f, 0.10f, 1.0f, 0.30f, 0.31f, 0.34f, 1.0f };
-    CGFloat blue[8]    = { 0.46f, 0.64f, 0.95f, 1.0f, 0.10f, 0.32f, 0.72f, 1.0f };
-    CGGradientRef g = CGGradientCreateWithColorComponents(cs, toggled ? blue : (down ? pressed : normal), NULL, 2);
-    CGContextDrawLinearGradient(c, g, CGPointMake(0, r.origin.y), CGPointMake(0, CGRectGetMaxY(r)), 0);
-    CGGradientRelease(g);
-    CGContextRestoreGState(c);
-
-    if (!down) {                                                           /* glass highlight */
-        CGContextSaveGState(c);
-        CGRect gr = CGRectMake(r.origin.x + r.size.width * 0.12f, r.origin.y + 1.5f, r.size.width * 0.76f, r.size.height * 0.46f);
-        CGContextAddEllipseInRect(c, gr);
-        CGContextClip(c);
-        CGFloat gl[8] = { 1, 1, 1, 0.34f, 1, 1, 1, 0.03f };
-        CGGradientRef gg = CGGradientCreateWithColorComponents(cs, gl, NULL, 2);
-        CGContextDrawLinearGradient(c, gg, CGPointMake(0, gr.origin.y), CGPointMake(0, CGRectGetMaxY(gr)), 0);
-        CGGradientRelease(gg);
-        CGContextRestoreGState(c);
-    }
-    [[UIColor colorWithWhite:0.0f alpha:0.9f] setStroke];
-    CGContextSetLineWidth(c, 1.2f);
-    CGContextStrokeEllipseInRect(c, r);
+    BTKeyDrawWall(c, cs, wall, toggled);
+    BTKeyDrawFace(c, cs, face, down, toggled);
 
     if (glyph == GReels) {
         UIFont *f = [UIFont boldSystemFontOfSize:11.0f];
-        CGRect tr = CGRectMake(r.origin.x, CGRectGetMidY(r) - 7.0f, r.size.width, 14.0f);
-        [[UIColor colorWithWhite:0.0f alpha:0.65f] set];
+        CGRect tr = CGRectMake(face.origin.x, CGRectGetMidY(face) - 7.0f, face.size.width, 14.0f);
+        if (toggled) { [[UIColor colorWithWhite:0.0f alpha:0.55f] set]; }
+        else         { [[UIColor colorWithWhite:1.0f alpha:0.90f] set]; }
         [@"Reels" drawInRect:CGRectOffset(tr, 0, 1.0f) withFont:f lineBreakMode:NSLineBreakByClipping alignment:NSTextAlignmentCenter];
-        [[UIColor whiteColor] set];
+        if (toggled) { [[UIColor whiteColor] set]; }
+        else         { [[UIColor colorWithWhite:0.28f alpha:1.0f] set]; }
         [@"Reels" drawInRect:tr withFont:f lineBreakMode:NSLineBreakByClipping alignment:NSTextAlignmentCenter];
     } else {
-        RemoteDrawGlyphFace(c, glyph, r, 0.96f);
+        RemoteDrawGlyphEngraved(c, glyph, face, !toggled);
     }
     CGColorSpaceRelease(cs);
 }
@@ -279,50 +280,47 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 - (void)drawRect:(CGRect)rect {
     CGContextRef c = UIGraphicsGetCurrentContext();
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGRect r = CGRectInset(self.bounds, 2.0f, 2.0f);
-    UIBezierPath *cap = [UIBezierPath bezierPathWithRoundedRect:r cornerRadius:r.size.width / 2.0f];
+    CGRect wall, r;
+    BTKeyFrames(self.bounds, &wall, &r, NO);                                 /* the rocker face stays level; only the pressed half dips */
+    UIBezierPath *cap = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(r, 0.5f, 0.5f) cornerRadius:BT_KEY_RADIUS];
 
-    [[UIColor colorWithWhite:1.0f alpha:0.16f] setFill];
-    CGContextSaveGState(c);
-    CGContextTranslateCTM(c, 0, 1.0f);
-    [cap fill];
-    CGContextRestoreGState(c);
+    BTKeyDrawWall(c, cs, wall, NO);
+    BTKeyDrawFace(c, cs, r, NO, NO);
 
-    CGContextSaveGState(c);
-    [cap addClip];
-    CGFloat body[8] = { 0.44f, 0.45f, 0.48f, 1.0f, 0.05f, 0.05f, 0.07f, 1.0f };
-    CGGradientRef g = CGGradientCreateWithColorComponents(cs, body, NULL, 2);
-    CGContextDrawLinearGradient(c, g, CGPointMake(0, r.origin.y), CGPointMake(0, CGRectGetMaxY(r)), 0);
-    CGGradientRelease(g);
-    CGFloat gl[8] = { 1, 1, 1, 0.26f, 1, 1, 1, 0.02f };
-    CGGradientRef gg = CGGradientCreateWithColorComponents(cs, gl, NULL, 2);
-    CGContextDrawLinearGradient(c, gg, CGPointMake(0, r.origin.y), CGPointMake(0, r.origin.y + r.size.height * 0.5f), 0);
-    CGGradientRelease(gg);
-    if (half != 0) {                                                       /* pressed half */
+    if (half != 0) {                                                       /* pressed half is dished like a pressed key */
         CGRect hr = r;
         hr.size.height = r.size.height / 2.0f;
         if (half == 2) hr.origin.y += hr.size.height;
-        [[UIColor colorWithWhite:0.0f alpha:0.40f] setFill];
-        CGContextFillRect(c, hr);
+        CGContextSaveGState(c);
+        [cap addClip];
+        CGContextClipToRect(c, hr);
+        CGFloat dn[8] = { 0.60f, 0.61f, 0.66f, 1.0f, 0.86f, 0.87f, 0.90f, 1.0f };
+        CGGradientRef g = CGGradientCreateWithColorComponents(cs, dn, NULL, 2);
+        CGContextDrawLinearGradient(c, g, CGPointMake(0, hr.origin.y), CGPointMake(0, CGRectGetMaxY(hr)), 0);
+        CGGradientRelease(g);
+        CGContextRestoreGState(c);
+        [[UIColor colorWithWhite:0.33f alpha:1.0f] setStroke];
+        [cap setLineWidth:1.0f];
+        [cap stroke];
     }
-    CGContextRestoreGState(c);
-    [[UIColor colorWithWhite:0.0f alpha:0.9f] setStroke];
-    [cap setLineWidth:1.2f];
-    [cap stroke];
 
     CGFloat midY = CGRectGetMidY(r), cx = CGRectGetMidX(r);
-    CGContextSetRGBStrokeColor(c, 0, 0, 0, 0.7f);                         /* divider */
-    CGContextSetLineWidth(c, 1.0f);
+    CGContextSetLineWidth(c, 1.0f);                                        /* engraved groove between the halves */
+    CGContextSetRGBStrokeColor(c, 1, 1, 1, 0.85f);
+    CGContextMoveToPoint(c, r.origin.x + 8.0f, midY + 1.0f);
+    CGContextAddLineToPoint(c, CGRectGetMaxX(r) - 8.0f, midY + 1.0f);
+    CGContextStrokePath(c);
+    CGContextSetRGBStrokeColor(c, 0.30f, 0.32f, 0.37f, 0.9f);
     CGContextMoveToPoint(c, r.origin.x + 8.0f, midY);
     CGContextAddLineToPoint(c, CGRectGetMaxX(r) - 8.0f, midY);
     CGContextStrokePath(c);
 
-    CGFloat s = 7.0f;                                                      /* plus and minus */
+    CGFloat s = 6.5f;                                                      /* engraved plus and minus */
     CGFloat topY = r.origin.y + r.size.height * 0.25f, botY = r.origin.y + r.size.height * 0.75f;
     for (int pass = 0; pass < 2; pass++) {
         CGContextSaveGState(c);
-        if (pass == 0) { CGContextTranslateCTM(c, 0, 1.0f); CGContextSetRGBStrokeColor(c, 0, 0, 0, 0.65f); }
-        else CGContextSetRGBStrokeColor(c, 1, 1, 1, 0.96f);
+        if (pass == 0) { CGContextTranslateCTM(c, 0, 1.0f); CGContextSetRGBStrokeColor(c, 1, 1, 1, 0.90f); }
+        else CGContextSetRGBStrokeColor(c, 0.28f, 0.29f, 0.33f, 1.0f);
         CGContextSetLineWidth(c, 3.0f);
         CGContextSetLineCap(c, kCGLineCapRound);
         CGContextMoveToPoint(c, cx - s, topY); CGContextAddLineToPoint(c, cx + s, topY);
@@ -331,9 +329,8 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
         CGContextStrokePath(c);
         CGContextRestoreGState(c);
     }
-    [[UIColor colorWithWhite:1.0f alpha:0.55f] set];                      /* label between the two halves */
-    [label drawInRect:CGRectMake(r.origin.x, midY + 2.0f, r.size.width, 12.0f)
-             withFont:[UIFont boldSystemFontOfSize:9.0f] lineBreakMode:NSLineBreakByClipping alignment:NSTextAlignmentCenter];
+    BTDrawEngravedText(label, CGRectMake(r.origin.x, midY + 3.0f, r.size.width, 12.0f),
+                       [UIFont boldSystemFontOfSize:9.0f], NSTextAlignmentCenter);
     CGColorSpaceRelease(cs);
 }
 
@@ -434,18 +431,29 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 - (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event { [self press:-1]; }
 
 - (void)drawRect:(CGRect)rect {
-    BTDrawPanel(self.bounds, 14.0f);
-    CGContextRef c = UIGraphicsGetCurrentContext();
+    CGContextRef c = UIGraphicsGetCurrentContext();                    /* the aluminium block behind is drawn by the page */
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGPoint m = [self middle];
     CGFloat R = [self outerRadius], cr = [self centerRadius];
     CGRect ring = CGRectMake(m.x - R, m.y - R, 2 * R, 2 * R);
 
+    CGRect wall = CGRectOffset(ring, 0, BT_KEY_DEPTH + 1.0f);             /* side wall: the thickness of the machined ring */
     CGContextSaveGState(c);                                            /* drop shadow */
     CGContextSetShadowWithColor(c, CGSizeMake(0, 3.0f), 7.0f, [UIColor colorWithWhite:0.0f alpha:0.5f].CGColor);
-    [[UIColor colorWithWhite:0.6f alpha:1.0f] setFill];
-    CGContextFillEllipseInRect(c, ring);
+    [[UIColor colorWithWhite:0.40f alpha:1.0f] setFill];
+    CGContextFillEllipseInRect(c, wall);
     CGContextRestoreGState(c);
+    CGContextSaveGState(c);
+    CGContextAddEllipseInRect(c, wall);
+    CGContextClip(c);
+    CGFloat wallG[8] = { 0.60f, 0.61f, 0.65f, 1.0f, 0.34f, 0.35f, 0.39f, 1.0f };
+    CGGradientRef wg = CGGradientCreateWithColorComponents(cs, wallG, NULL, 2);
+    CGContextDrawLinearGradient(c, wg, CGPointMake(0, wall.origin.y), CGPointMake(0, CGRectGetMaxY(wall)), 0);
+    CGGradientRelease(wg);
+    CGContextRestoreGState(c);
+    [[UIColor colorWithWhite:0.18f alpha:1.0f] setStroke];
+    CGContextSetLineWidth(c, 1.0f);
+    CGContextStrokeEllipseInRect(c, CGRectInset(wall, 0.5f, 0.5f));
 
     CGContextSaveGState(c);                                            /* ring body */
     CGContextAddEllipseInRect(c, ring);
@@ -734,6 +742,10 @@ static const char *kRemoteCmds[10] = {
     if (self) {
         self.backgroundColor = BTLinenColor();
 
+        chassis = [[AluminiumBlock alloc] initWithFrame:CGRectZero];            /* D-pad style: one block behind pad + remote */
+        [self addSubview:chassis];
+        [chassis release];
+
         panel = [[MediaPanel alloc] initWithFrame:CGRectZero];
         dpad = [[DPadView alloc] initWithFrame:CGRectZero];
         [self addSubview:panel];
@@ -744,11 +756,11 @@ static const char *kRemoteCmds[10] = {
         infoB = [UIButton buttonWithType:UIButtonTypeInfoDark];                /* small "i": show / hide the instructions */
         [infoB addTarget:self action:@selector(infoTapped) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:infoB];
-        kbB = BTMakeStyledButton(nil, BTStyleGray, self, @selector(keyboardTapped));
+        kbB = BTMakeKeyButton(nil, self, @selector(keyboardTapped));
         [kbB setImage:[UIImage imageNamed:@"glyph_keyboard.png"] forState:UIControlStateNormal];
         [self addSubview:kbB];
 
-        expandB = BTMakeStyledButton([NSString stringWithUTF8String:"\xE2\x96\xBC"], BTStyleGray, self, @selector(toggleExpand));   /* down arrow = grow the pad */
+        expandB = BTMakeKeyButton([NSString stringWithUTF8String:"\xE2\x96\xBC"], self, @selector(toggleExpand));   /* down arrow = grow the pad */
         [self addSubview:expandB];
 
         remoteBody = [[RemoteBody alloc] initWithFrame:CGRectZero];
@@ -788,9 +800,19 @@ static const char *kRemoteCmds[10] = {
 
 - (void)layoutSubviews {
     CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-    CGFloat m = 8.0f, remoteH = (expanded && gesturePad) ? 66.0f : 176.0f;   /* expanded: only the Back / Home / Menu row is left */
+    CGFloat m = 8.0f;
+    CGFloat pad = 16.0f, bs = 44.0f, gap = 8.0f;                          /* inside the etched border: square keys on an even grid */
+    BOOL collapsed = (expanded && gesturePad);                            /* expanded: only the Back / Home / Menu row is left */
+    CGFloat remoteH = collapsed ? (bs + 2 * pad) : (3 * bs + 2 * gap + 2 * pad);
     CGRect remote = CGRectMake(m, h - remoteH - m, w - 2 * m, remoteH);
-    CGRect box = CGRectMake(m, m, w - 2 * m, h - remoteH - 3 * m);
+    CGRect box;
+    if (gesturePad) {                                                     /* trackpad: its own slab, separate from the remote slab */
+        box = CGRectMake(m, m, w - 2 * m, h - remoteH - 3 * m);
+        chassis.frame = CGRectZero;
+    } else {                                                              /* D-pad: pad and remote share one aluminium block */
+        chassis.frame = CGRectMake(m, m, w - 2 * m, h - 2 * m);
+        box = CGRectMake(m, m, w - 2 * m, remote.origin.y - m);
+    }
     panel.frame = box;
     dpad.frame = box;
     infoB.frame = CGRectMake(box.origin.x + 6.0f, box.origin.y + 6.0f, 30.0f, 30.0f);
@@ -799,16 +821,14 @@ static const char *kRemoteCmds[10] = {
 
     remoteBody.frame = remote;
     CGFloat rw = remote.size.width;
-    CGFloat rocker = 54.0f, side = 10.0f;
-    volR.frame = CGRectMake(side, 10.0f, rocker, 104.0f);
-    chR.frame  = CGRectMake(rw - side - rocker, 10.0f, rocker, 104.0f);
-    muteB.frame  = CGRectMake(side + 3.0f, 120.0f, 48.0f, 48.0f);
-    reelsB.frame = CGRectMake(rw - side - rocker + 3.0f, 120.0f, 48.0f, 48.0f);
-    CGFloat bs = 46.0f, x0 = side + rocker + 10.0f;
-    CGFloat gap = ((rw - x0 - (side + rocker + 10.0f)) - 3 * bs) / 2.0f;
+    CGFloat gridW = 3 * bs + 2 * gap, gx = (rw - gridW) / 2.0f;
+    volR.frame = CGRectMake(pad, pad, bs, 2 * bs + gap);                  /* rockers span the top two rows, Mute / Reels sit in the third */
+    chR.frame  = CGRectMake(rw - pad - bs, pad, bs, 2 * bs + gap);
+    muteB.frame  = CGRectMake(pad, pad + 2 * (bs + gap), bs, bs);
+    reelsB.frame = CGRectMake(rw - pad - bs, pad + 2 * (bs + gap), bs, bs);
     for (int i = 0; i < (int)[centerButtons count]; i++) {
         int row = i / 3, col = i % 3;
-        ((UIView *)[centerButtons objectAtIndex:i]).frame = CGRectMake(x0 + col * (bs + gap), 10.0f + row * (bs + 9.0f), bs, bs);
+        ((UIView *)[centerButtons objectAtIndex:i]).frame = CGRectMake(gx + col * (bs + gap), pad + row * (bs + gap), bs, bs);
     }
 }
 
@@ -821,6 +841,8 @@ static const char *kRemoteCmds[10] = {
     BOOL useDpad = (padMode == 0 && !reelsOn);                          /* Reels shows a plain pad, like the trackpad */
     dpad.hidden = !useDpad;
     panel.hidden = useDpad;
+    chassis.hidden = !useDpad;
+    [(RemoteBody *)remoteBody setDrawsSlab:!useDpad];                   /* trackpad style: the remote is its own slab */
     expandB.hidden = useDpad;                                           /* expand is only for the trackpad-style pad */
     gesturePad = !useDpad;                                              /* the D-pad always shows the full remote; the saved choice is kept */
     [self setNeedsLayout];

@@ -58,12 +58,36 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
     return d;
 }
 
+/* The sheet's background: full-bleed brushed aluminium with the key section etched into it. */
+@interface KBBackdrop : UIView {
+    CGRect pocket;
+}
+- (void)setPocket:(CGRect)r;
+@end
+@implementation KBBackdrop
+- (id)initWithFrame:(CGRect)f {
+    self = [super initWithFrame:f];
+    if (self) {
+        self.backgroundColor = BTLinenColor();
+        self.opaque = YES;
+        self.userInteractionEnabled = NO;
+        self.contentMode = UIViewContentModeRedraw;
+    }
+    return self;
+}
+- (void)setPocket:(CGRect)r { if (!CGRectEqualToRect(r, pocket)) { pocket = r; [self setNeedsDisplay]; } }
+- (void)drawRect:(CGRect)rect {
+    BTDrawBrushedFill(self.bounds);
+    if (pocket.size.width > 0) BTDrawEtchedBox(pocket, 10.0f, NO);
+}
+@end
+
 @implementation KeyboardView
 
 /* ---------------------------------------------------------------- building */
 
 - (UIButton *)keyButton:(const KeyDef *)def {
-    UIButton *b = BTMakeStyledButton([NSString stringWithUTF8String:def->title], BTStyleKey, nil, NULL);
+    UIButton *b = BTMakeKeyButton([NSString stringWithUTF8String:def->title], nil, NULL);
     b.tag = def->usage;
     [b addTarget:self action:@selector(keyDown:) forControlEvents:UIControlEventTouchDown];
     [b addTarget:self action:@selector(keyUp:)
@@ -82,7 +106,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 }
 
 - (UIButton *)modButton:(NSString *)title mask:(int)mask {
-    UIButton *b = BTMakeStyledButton(title, BTStyleKey, self, @selector(modPressed:));
+    UIButton *b = BTMakeKeyButton(title, self, @selector(modPressed:));
     b.tag = mask;                      /* tag == HID modifier bit */
     return b;
 }
@@ -94,8 +118,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
         self.opaque = YES;
         self.clipsToBounds = YES;
 
-        backdrop = [[UIView alloc] initWithFrame:CGRectZero];
-        backdrop.backgroundColor = BTLinenColor();
+        backdrop = [[KBBackdrop alloc] initWithFrame:CGRectZero];
         [self addSubview:backdrop];
         [backdrop release];
 
@@ -167,29 +190,31 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 
 /* ---------------------------------------------------------------- layout */
 
+/* square-ish aluminium keys on an even grid: 8 pt around and between keys in a row, 6 pt between rows */
 - (void)layoutRows:(NSArray *)rows width:(CGFloat)w {
-    CGFloat pad = 6.0f, gap = 5.0f, rowH = 38.0f, y = 0.0f;
+    CGFloat pad = 8.0f, gap = 8.0f, vgap = 6.0f, rowH = 36.0f, y = pad;
     for (NSArray *row in rows) {
         int cnt = (int)[row count];
         CGFloat bw = (w - 2 * pad - (cnt - 1) * gap) / cnt;
         for (int i = 0; i < cnt; i++) {
             ((UIButton *)[row objectAtIndex:i]).frame = CGRectMake(pad + i * (bw + gap), y, bw, rowH);
         }
-        y += rowH + gap;
+        y += rowH + vgap;
     }
 }
 
 - (void)layoutSubviews {
     CGFloat w = self.bounds.size.width;
-    const CGFloat barH = 44.0f;
+    const CGFloat barH = 44.0f, side = 8.0f;
     backdrop.frame = self.bounds;
     topBar.frame = CGRectMake(0, 0, w, barH);
-    CGRect paneFrame = CGRectMake(0, barH + 6, w, 172);
+    CGRect paneFrame = CGRectMake(side, barH + 4.0f, w - 2 * side, 178.0f);   /* the etched key section */
+    [(KBBackdrop *)backdrop setPocket:paneFrame];
     arrowPane.frame = paneFrame;
     fkeyPane.frame = paneFrame;
-    [self layoutRows:arrowRows width:w];
-    [self layoutRows:fkeyRows width:w];
-    status.frame = CGRectMake(10, barH + 180, w - 20, 16);
+    [self layoutRows:arrowRows width:paneFrame.size.width];
+    [self layoutRows:fkeyRows width:paneFrame.size.width];
+    status.frame = CGRectMake(10, CGRectGetMaxY(paneFrame) + 3.0f, w - 20, 14);
 }
 
 - (void)showLayout:(int)index {
