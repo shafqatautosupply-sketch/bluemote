@@ -452,7 +452,9 @@ static long paste_ack_sent_ms = 0;
 static volatile int paste_gap_us = 12000;      /* extra pause after each key */
 #define PASTE_SLICE_CHARS  4      /* keys typed between two flow-control checks */
 #define PASTE_HOLD_US      12000  /* how long a key stays down */
-#define PASTE_NEWLINE_US   60000  /* extra pause after Enter: the receiver is busy handling the line */
+#define PASTE_NEWLINE_US   120000 /* extra pause after Enter: the receiver is busy handling the line */
+#define PASTE_PRE_NEWLINE_US 40000 /* pause before Enter so the previous character is committed first */
+#define PASTE_MOD_US       6000   /* shift down alone before the key */
 #define PASTE_ACK_TIMEOUT_MS 4000 /* give up waiting for the daemon after this long and carry on */
 
 #ifndef DAEMON_EVENT_VERSION
@@ -479,12 +481,30 @@ static void paste_finish(void) {
     paste_active = 0;
 }
 
+static void paste_release_all(void) {
+    /* The daemon silently drops a report when the controller's ACL buffers are full (l2cap_send returns
+       BTSTACK_ACL_BUFFERS_FULL and nobody retries). A dropped release leaves the key held on the TV, so, like
+       key_tap(), release twice. */
+    send_keyboard(0, 0);
+    usleep(3000);
+    send_keyboard(0, 0);
+}
+
 static void paste_key(uint8_t mod, uint8_t key, char ch) {
+    int is_enter = (ch == '\n' || ch == '\r');
+    /* Let the TV's input method commit the previous character before a line break arrives. */
+    if (is_enter) usleep(PASTE_PRE_NEWLINE_US);
+    if (mod) {                       /* shift goes down alone first: a merged "shift + key" report that is dropped or coalesced would type the unshifted character (2 instead of @, ; instead of :) */
+        send_keyboard(mod, 0);
+        usleep(PASTE_MOD_US);
+    }
     send_keyboard(mod, key);
     usleep(PASTE_HOLD_US);
-    send_keyboard(0, 0);
+    send_keyboard(mod, 0);           /* key up first, modifier still down */
+    usleep(3000);
+    paste_release_all();
     usleep(paste_gap_us);
-    if (ch == '\n' || ch == '\r') usleep(PASTE_NEWLINE_US);
+    if (is_enter) usleep(PASTE_NEWLINE_US);
 }
 
 static void paste_slice(void) {

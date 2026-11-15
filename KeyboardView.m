@@ -44,6 +44,11 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
                 case 0x2026: BTAppendStr(d, "..."); break;
                 case 0x00A0: case 0x2002: case 0x2003: case 0x2009: case 0x200A: case 0x202F: BTAppendStr(d, " "); break;
                 case 0x2022: case 0x00B7: BTAppendStr(d, "*"); break;
+                case 0x2028: case 0x2029: case 0x0085: case 0x000B: case 0x000C: {   /* Unicode line / paragraph breaks */
+                    one = '\n';
+                    [d appendBytes:&one length:1];
+                    break;
+                }
                 case 0x200B: case 0x200C: case 0x200D: case 0xFEFF: break;
                 default: skip++; break;
             }
