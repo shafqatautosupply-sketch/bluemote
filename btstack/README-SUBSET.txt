@@ -4,3 +4,6 @@ the CoreFoundation/POSIX run loops and the HCI/L2CAP/RFCOMM/SDP core (src).
 Local changes: (1) platform/daemon/src/btstack_client.h: BTSTACK_UNIX is "/tmp/Bluemote" instead of "/tmp/BTstack"
 so this package can live next to the Cydia BTstack package; (2) platform/daemon/src/btstack_version.h written by hand.
 BTstack is (c) BlueKitchen GmbH - free for non-commercial use, see the license headers in every source file.
+Later local changes (Bluemote): daemon.c enables Secure Simple Pairing "Just Works" on iPhone (NoInputNoOutput, auto accept) instead of
+gap_ssp_set_enable(0), and handles a new command BTSTACK_SET_SSP_IOCAP (btstack_defines.h, daemon_cmds.c/.h) so the app can switch to
+KeyboardOnly passkey entry; plus the iOS daemon / transport fixes described in docs/DEVELOPER_NOTES.txt (v5.3 to v5.12).

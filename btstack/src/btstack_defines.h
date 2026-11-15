@@ -162,6 +162,9 @@ typedef uint8_t sm_key_t[16];
 // set global Bluetooth state
 #define BTSTACK_SET_BLUETOOTH_ENABLED                      0x08
 
+// Bluemote: set Secure Simple Pairing IO capability: param io_capability (3 = NoInputNoOutput / Just Works, 2 = KeyboardOnly)
+#define BTSTACK_SET_SSP_IOCAP                              0x09
+
 // create l2cap channel: param bd_addr(48), psm (16)
 #define L2CAP_CREATE_CHANNEL                               0x20
 

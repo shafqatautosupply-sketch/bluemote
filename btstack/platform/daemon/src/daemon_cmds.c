@@ -91,6 +91,13 @@ const hci_cmd_t btstack_set_discoverable = {
 };
 
 /**
+ * @param io_capability (3 = NoInputNoOutput / Just Works, 2 = KeyboardOnly / type the passkey)
+ */
+const hci_cmd_t btstack_set_ssp_iocap = {
+    DAEMON_OPCODE_BTSTACK_SET_SSP_IOCAP, "1"
+};
+
+/**
  * @param bluetooth_enabled_flag (0 = off, 1 = on, only used by btstack config)
  */
 const hci_cmd_t btstack_set_bluetooth_enabled = {

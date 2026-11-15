@@ -1,0 +1,19 @@
+# Theos build output
+.theos/
+obj/
+packages/
+*.deb
+*.dSYM/
+
+# archives (the repo is the source of truth)
+*.zip
+
+# editors / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# tools
+__pycache__/
+*.pyc

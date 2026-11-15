@@ -114,40 +114,103 @@ UIColor *BTLinenColor(void) {
     return [UIColor groupTableViewBackgroundColor];          /* the real iOS 6 linen */
 }
 
-void BTDrawPanel(CGRect rect, CGFloat radius) {
+/* ---- brushed aluminium slab (trackpad, media pad, D-pad backdrop) ----
+   Drawn once per size into a cached image (deterministic grain, so it never shimmers), then just blitted.
+   Horizontal brushing: a base metal gradient with a bright sheen band, one random tone per pixel row, thousands of
+   short horizontal streaks, darker left / right edges, a bright top bevel, a shaded bottom lip and a soft drop shadow.
+   tools/preview_slab.py renders the same algorithm off-device. */
+
+static CGFloat BTRnd(unsigned int *s) {                        /* tiny LCG: same sequence every time */
+    *s = (*s) * 1664525u + 1013904223u;
+    return (CGFloat)((*s >> 8) & 0xFFFF) / 65535.0f;
+}
+
+static UIImage *BTBrushedSlabImage(CGSize size, CGFloat radius) {
+    CGFloat scale = [[UIScreen mainScreen] scale];
+    CGFloat px = 1.0f / scale;
+    UIGraphicsBeginImageContextWithOptions(size, NO, scale);
     CGContextRef c = UIGraphicsGetCurrentContext();
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGRect r = CGRectInset(rect, 1.0f, 1.0f);
-    r.size.height -= 1.0f;
+
+    CGRect r = CGRectMake(2.0f, 2.0f, size.width - 4.0f, size.height - 5.0f);   /* room for the shadow */
     UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:r cornerRadius:radius];
 
-    CGContextSaveGState(c);                                   /* white lip under the pad */
-    CGContextTranslateCTM(c, 0, 1.0f);
-    [[UIColor colorWithWhite:1.0f alpha:0.75f] setFill];
+    CGContextSaveGState(c);                                    /* drop shadow */
+    CGContextSetShadowWithColor(c, CGSizeMake(0, 1.5f), 4.0f, [UIColor colorWithWhite:0.0f alpha:0.45f].CGColor);
+    [[UIColor colorWithWhite:0.75f alpha:1.0f] setFill];
     [p fill];
     CGContextRestoreGState(c);
 
     CGContextSaveGState(c);
     [p addClip];
-    CGFloat metal[8] = { 0.92f, 0.93f, 0.95f, 1.0f, 0.71f, 0.73f, 0.77f, 1.0f };
-    CGGradientRef g = CGGradientCreateWithColorComponents(cs, metal, NULL, 2);
+
+    CGFloat metal[16] = { 0.90f, 0.91f, 0.93f, 1.0f,           /* top */
+                          0.97f, 0.97f, 0.985f, 1.0f,          /* sheen band */
+                          0.80f, 0.81f, 0.84f, 1.0f,
+                          0.66f, 0.67f, 0.71f, 1.0f };         /* bottom */
+    CGFloat metalLoc[4] = { 0.0f, 0.22f, 0.52f, 1.0f };
+    CGGradientRef g = CGGradientCreateWithColorComponents(cs, metal, metalLoc, 4);
     CGContextDrawLinearGradient(c, g, CGPointMake(0, r.origin.y), CGPointMake(0, CGRectGetMaxY(r)), 0);
     CGGradientRelease(g);
-    for (CGFloat y = r.origin.y; y < CGRectGetMaxY(r); y += 2.0f) {   /* fine brushed lines */
-        int odd = ((int)(y / 2.0f)) % 2;
-        CGContextSetRGBFillColor(c, odd ? 1.0f : 0.0f, odd ? 1.0f : 0.0f, odd ? 1.0f : 0.0f, 0.035f);
-        CGContextFillRect(c, CGRectMake(r.origin.x, y, r.size.width, 1.0f));
+
+    unsigned int seed = 0x5EED1234u;
+    for (CGFloat y = r.origin.y; y < CGRectGetMaxY(r); y += px) {            /* one random tone per pixel row */
+        CGFloat v = BTRnd(&seed) * 2.0f - 1.0f;
+        if (v > 0) CGContextSetRGBFillColor(c, 1, 1, 1, v * 0.09f);
+        else       CGContextSetRGBFillColor(c, 0, 0, 0, -v * 0.07f);
+        CGContextFillRect(c, CGRectMake(r.origin.x, y, r.size.width, px));
     }
-    CGFloat shade[8] = { 0, 0, 0, 0.30f, 0, 0, 0, 0.0f };           /* inner shadow along the top edge */
-    CGGradientRef sg = CGGradientCreateWithColorComponents(cs, shade, NULL, 2);
-    CGContextDrawLinearGradient(c, sg, CGPointMake(0, r.origin.y), CGPointMake(0, r.origin.y + 16.0f), 0);
-    CGGradientRelease(sg);
+    int streaks = (int)(r.size.width * r.size.height / 60.0f);               /* short bright / dark scratches */
+    for (int i = 0; i < streaks; i++) {
+        CGFloat t = BTRnd(&seed);
+        CGFloat len = 8.0f + t * t * 170.0f;
+        CGFloat x = r.origin.x - len * 0.5f + BTRnd(&seed) * (r.size.width + len * 0.5f);
+        CGFloat y = r.origin.y + floorf(BTRnd(&seed) * r.size.height * scale) * px;
+        CGFloat a = 0.04f + BTRnd(&seed) * 0.09f;
+        if (BTRnd(&seed) > 0.5f) CGContextSetRGBFillColor(c, 1, 1, 1, a);
+        else                     CGContextSetRGBFillColor(c, 0, 0, 0, a);
+        CGContextFillRect(c, CGRectMake(x, y, len, px));
+    }
+
+    CGFloat edge[8] = { 0, 0, 0, 0.12f, 0, 0, 0, 0.0f };                     /* darker left / right edges */
+    CGGradientRef eg = CGGradientCreateWithColorComponents(cs, edge, NULL, 2);
+    CGContextDrawLinearGradient(c, eg, CGPointMake(r.origin.x, 0), CGPointMake(r.origin.x + 22.0f, 0), 0);
+    CGContextDrawLinearGradient(c, eg, CGPointMake(CGRectGetMaxX(r), 0), CGPointMake(CGRectGetMaxX(r) - 22.0f, 0), 0);
+    CGGradientRelease(eg);
+
+    CGFloat hi[8] = { 1, 1, 1, 0.70f, 1, 1, 1, 0.0f };                       /* bright bevel along the top */
+    CGGradientRef hg = CGGradientCreateWithColorComponents(cs, hi, NULL, 2);
+    CGContextDrawLinearGradient(c, hg, CGPointMake(0, r.origin.y), CGPointMake(0, r.origin.y + 2.0f), 0);
+    CGGradientRelease(hg);
+
+    CGFloat lo[8] = { 0, 0, 0, 0.22f, 0, 0, 0, 0.0f };                       /* shaded lip along the bottom */
+    CGGradientRef lg = CGGradientCreateWithColorComponents(cs, lo, NULL, 2);
+    CGContextDrawLinearGradient(c, lg, CGPointMake(0, CGRectGetMaxY(r)), CGPointMake(0, CGRectGetMaxY(r) - 8.0f), 0);
+    CGGradientRelease(lg);
     CGContextRestoreGState(c);
 
-    [[UIColor colorWithWhite:0.30f alpha:1.0f] setStroke];
+    [[UIColor colorWithWhite:0.30f alpha:1.0f] setStroke];                   /* outer edge */
     [p setLineWidth:1.0f];
     [p stroke];
+
     CGColorSpaceRelease(cs);
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
+}
+
+void BTDrawPanel(CGRect rect, CGFloat radius) {
+    static NSMutableDictionary *cache = nil;
+    if (cache == nil) cache = [[NSMutableDictionary alloc] init];
+    NSString *key = [NSString stringWithFormat:@"%.1fx%.1f@%.0f/%.0f", rect.size.width, rect.size.height,
+                     [[UIScreen mainScreen] scale], radius];
+    UIImage *img = [cache objectForKey:key];
+    if (img == nil) {
+        if ([cache count] > 8) [cache removeAllObjects];          /* sizes only change with rotation / expand */
+        img = BTBrushedSlabImage(rect.size, radius);
+        if (img) [cache setObject:img forKey:key];
+    }
+    [img drawAtPoint:rect.origin];
 }
 
 void BTDrawEngravedText(NSString *text, CGRect rect, UIFont *font, NSTextAlignment align) {
@@ -255,4 +318,11 @@ CGPoint BTCentroid(NSSet *all, UIView *v) {
     }
     if (n == 0) return CGPointZero;
     return CGPointMake(sx / n, sy / n);
+}
+
+/* OK like a real remote: Select (DPAD_CENTER) by default, Enter if chosen in Settings. The mode is sent first, so a
+   change in Settings takes effect at once; commands are processed in order. */
+void BTSendOK(int phase) {
+    bluemote_sendf("OKMODE %d", (int)[[NSUserDefaults standardUserDefaults] integerForKey:kPrefOkMode]);
+    bluemote_send(phase == 1 ? "OKD" : (phase == 2 ? "OKU" : "OK"));
 }

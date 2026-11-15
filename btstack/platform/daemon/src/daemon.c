@@ -960,6 +960,20 @@ static int btstack_command_handler(connection_t *connection, uint8_t *packet, ui
             // merge state
             gap_discoverable_control(clients_require_discoverable());
             break;
+        case BTSTACK_SET_SSP_IOCAP:
+            log_info("BTSTACK_SET_SSP_IOCAP %u", packet[3]);
+            if (packet[3] == SSP_IO_CAPABILITY_KEYBOARD_ONLY) {
+                // optional mode: the TV shows a passkey and the user types it in the app (app answers the passkey request)
+                gap_ssp_set_io_capability(SSP_IO_CAPABILITY_KEYBOARD_ONLY);
+                gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_REQUIRED_GENERAL_BONDING);
+                gap_ssp_set_auto_accept(0);
+            } else {
+                // default: Just Works, fully automatic
+                gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
+                gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
+                gap_ssp_set_auto_accept(1);
+            }
+            break;
         case BTSTACK_SET_BLUETOOTH_ENABLED:
             log_info("BTSTACK_SET_BLUETOOTH_ENABLED: %u\n", packet[3]);
             if (packet[3]) {
@@ -1965,8 +1979,14 @@ static void btstack_server_configure_stack(void){
     gap_set_local_name(hostname);
 
 #ifdef HAVE_PLATFORM_IPHONE_OS
-    // iPhone doesn't use SSP yet as there's no UI for it yet and auto accept is not an option
-    gap_ssp_set_enable(0);
+    // Bluemote: behave like a real Bluetooth keyboard / gamepad. Secure Simple Pairing is ON with IO capability
+    // "NoInputNoOutput", MITM not required, general bonding and auto accept -> "Just Works": the TV pairs
+    // automatically and never asks for a PIN / passcode. (Legacy PIN pairing is still used automatically when
+    // the TV itself does not support SSP.)
+    gap_ssp_set_enable(1);
+    gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
+    gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
+    gap_ssp_set_auto_accept(1);
 #endif
 
     // register for HCI events

@@ -7,7 +7,7 @@
  *   M dx dy [wheel]     MB mask      CLICK [mask]   W n   HW n (horizontal scroll)
  *   KEY usage [mod]     KD usage [mod]   KU
  *   TYPE text           TYPEMOD mod text
- *   MEDIA name|0xUSAGE  SWIPE dx dy (mouse drag gesture)
+ *   OK | OKD | OKU | OKMODE 0 (Select, remote OK) / 1 (Enter)   MEDIA name|0xUSAGE  SWIPE dx dy (mouse drag gesture)
  *   PASTE / PASTECONT   (long text typed in small slices, see bluemote_paste_*)
  *   PAIR PAIRSTOP RECONNECT CONNECT n DISCONNECT FORGET FORGETDEV n PACE us
  *   PIN code | PINCANCEL | IOCAP 2|3
@@ -153,7 +153,7 @@ static volatile int pairing_mode = 0;
 static volatile int pin_request = 0;
 static volatile time_t pin_request_time = 0;
 static bd_addr_t pin_addr;
-static volatile int io_capability = 3;      /* 3 = NoInputNoOutput (auto), 2 = KeyboardOnly (type the passkey) */
+static volatile int io_capability = 3;      /* 3 = NoInputNoOutput = Just Works, no code (default), 2 = KeyboardOnly (type the passkey) */
 
 static void keys_update_summary(void) {
     saved_count = key_count;
@@ -307,6 +307,34 @@ static void key_tap(uint8_t modifiers, uint8_t key) {
     usleep(2000);
 }
 
+/* ---- OK button ----
+   A real TV remote's OK is DPAD_CENTER, not Enter: with Gboard open, Enter just commits the text while DPAD_CENTER
+   selects the highlighted suggestion. Mode 0 sends HID Consumer "Menu Pick" (0x41 -> Linux KEY_SELECT -> Android
+   DPAD_CENTER). Mode 1 sends the keyboard Enter key (0x28) for hosts that only understand that.
+   OKD / OKU hold the key down / release it, so a long press on the phone is a real long press on the TV. */
+#define OK_USAGE_SELECT 0x0041
+#define OK_KEY_ENTER    0x28
+static volatile int ok_mode = 0;          /* 0 = Select (remote), 1 = Enter (keyboard) */
+static int ok_down_mode = -1;             /* mode the currently held OK was pressed with, -1 = not held */
+
+static void ok_down(void) {
+    if (ok_down_mode >= 0) return;        /* already held */
+    ok_down_mode = ok_mode;
+    if (ok_down_mode == 0) send_consumer(OK_USAGE_SELECT);
+    else                   send_keyboard(0, OK_KEY_ENTER);
+}
+
+static void ok_up(void) {
+    int m = ok_down_mode;
+    ok_down_mode = -1;
+    if (m < 0) return;
+    for (int i = 0; i < 2; i++) {         /* repeated: a dropped release would leave the key stuck */
+        if (m == 0) send_consumer(0);
+        else        send_keyboard(0, 0);
+        usleep(3000);
+    }
+}
+
 static void media_tap(uint16_t usage) {
     send_consumer(usage);
     usleep(10000);
@@ -384,6 +412,7 @@ static const media_name_t media_names[] = {
     { "volup", 0x00e9 },     { "voldown", 0x00ea }, { "mute", 0x00e2 },
     { "chup", 0x009c },      { "chdown", 0x009d },
     { "home", 0x0223 },      { "back", 0x0224 },    { "menu", 0x0040 },
+    { "select", 0x0041 },    { "ok", 0x0041 },
     { NULL, 0 }
 };
 
@@ -628,11 +657,15 @@ static void process_line(char *line) {
     if (strcasecmp(line, "CONNECT") == 0)    { int n = 0; if (sscanf(rest, "%d", &n) >= 1) cmd_connect(n); return; }
     if (strcasecmp(line, "FORGETDEV") == 0)  { int n = -1; if (sscanf(rest, "%d", &n) >= 1) cmd_forget_dev(n); return; }
     if (strcasecmp(line, "DISCONNECT") == 0) { cmd_disconnect(); return; }
+    if (strcasecmp(line, "OKMODE") == 0)     { int v = 0; if (sscanf(rest, "%d", &v) >= 1) ok_mode = (v == 1) ? 1 : 0; return; }
     if (strcasecmp(line, "PIN") == 0)        { cmd_pin(rest); return; }
     if (strcasecmp(line, "PINCANCEL") == 0)  { cmd_pin_cancel(); return; }
     if (strcasecmp(line, "IOCAP") == 0) {
         int v = 0;
-        if (sscanf(rest, "%d", &v) >= 1 && (v == 2 || v == 3)) io_capability = v;
+        if (sscanf(rest, "%d", &v) >= 1 && (v == 2 || v == 3)) {
+            io_capability = v;
+            bt_send_cmd(&btstack_set_ssp_iocap, v);     /* the daemon's stack answers the IO capability request */
+        }
         return;
     }
     if (strcasecmp(line, "PASTE") == 0 || strcasecmp(line, "PASTECONT") == 0) { paste_slice(); return; }
@@ -642,9 +675,18 @@ static void process_line(char *line) {
         return;
     }
 
-    if (!is_connected) return;
+    if (strcasecmp(line, "OKU") == 0)        { ok_up(); return; }    /* releasing must work even if the link just dropped */
+    if (!is_connected) { ok_down_mode = -1; return; }
 
     int a = 0, b = 0, c = 0, n;
+
+    if (strcasecmp(line, "OKD") == 0)        { ok_down(); return; }
+    if (strcasecmp(line, "OK") == 0) {
+        ok_down();
+        usleep(10000);
+        ok_up();
+        return;
+    }
 
     if (strcasecmp(line, "M") == 0) {
         n = sscanf(rest, "%d %d %d", &a, &b, &c);
@@ -835,7 +877,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     bt_working = 1;
                     status_text = "Ready - use the Pair tab to pair";
                     bt_send_cmd(&hci_write_class_of_device, 0x0025C0);
-                    /* bt_send_cmd(&hci_write_simple_pairing_mode, 1); */
+                    /* Secure Simple Pairing is enabled by the daemon during chip init (daemon.c); Just Works by default */
+                    bt_send_cmd(&btstack_set_ssp_iocap, io_capability);
                     bt_send_cmd(&hci_write_scan_enable, 0x03);
                     bt_send_cmd(&btstack_set_discoverable, 1);
                     if (!sdp_registered) {            /* the daemon keeps the record until we disconnect: register it once */
@@ -888,21 +931,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     break;
 #endif
 
-                case 0x31: /* IO capability request */
-                {
-                    bd_addr_t addr;
-                    flip_bd_addr(addr, &packet[2]);
-                    bt_send_cmd(&hci_io_capability_request_reply, addr, io_capability, 0, io_capability == 2 ? 0x05 : 0x04);
-                    break;
-                }
-
-                case 0x33: /* user confirmation request */
-                {
-                    bd_addr_t addr;
-                    flip_bd_addr(addr, &packet[2]);
-                    bt_send_cmd(&hci_user_confirmation_request_reply, addr);
-                    break;
-                }
+                /* IO capability request (0x31) and user confirmation request (0x33) are answered by the daemon's
+                   stack itself (SSP "Just Works"). Do not answer them here as well: the duplicate reply would race
+                   the stack's and be rejected by the chip. */
 
                 case L2CAP_EVENT_CHANNEL_OPENED:
                     if (l2cap_event_channel_opened_get_status(packet)) {

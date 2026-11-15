@@ -1,5 +1,28 @@
-Bluemote v7.0 - standalone (BTstack v1.2 inside)
+Bluemote v7.3 - standalone (BTstack v1.2 inside)
 ==============================================
+
+OK BUTTON (v7.3) - like a real TV remote
+  OK used to send keyboard Enter, so with Gboard open it committed the text instead of picking the highlighted suggestion.
+  It now sends HID Consumer "Menu Pick" (0x41 -> Linux KEY_SELECT -> Android DPAD_CENTER). Settings > Media remote > OK button
+  = Select (default) or Enter (fallback for a host that ignores Select). D-pad centre is a true held key: finger down = key
+  down, finger up = key up, so tap = click and holding = long press (context menu etc.). Media gesture pad: tap = OK.
+  Core commands: OK, OKD, OKU, OKMODE 0|1.
+
+LOOK (v7.2)
+  Trackpad, Media gesture pad and the D-pad backdrop are one horizontally brushed aluminium slab (BTDrawPanel in UIHelpers.m:
+  metal gradient with a sheen band, per-row grain, horizontal streaks, bevelled top, shaded lip, drop shadow). It is rendered
+  once per size and cached, so touches stay smooth. Icon: pre-rendered iOS 6 style (aluminium D-pad, glossy blue Bluetooth
+  jewel, domed gloss). Regenerate with  python3 tools/make_icon.py Resources   (needs pillow, numpy, scipy);
+  tools/preview_slab.py renders the slab off-device.
+
+AUTOMATIC PAIRING (v7.1) - no passcode, like a real Bluetooth keyboard
+  The daemon used to switch Secure Simple Pairing OFF (daemon.c: gap_ssp_set_enable(0)), so every TV fell back to legacy
+  PIN pairing and asked for a code. It now runs SSP with IO capability NoInputNoOutput, MITM not required, general bonding,
+  auto accept ("Just Works"): the TV pairs by itself and shows no code. The app no longer answers the IO-capability /
+  user-confirmation events itself (the stack does). TVs that do not support SSP still use the PIN box.
+  Optional: Pair tab > "Type the TV's passkey" switches to KeyboardOnly (new daemon command BTSTACK_SET_SSP_IOCAP).
+  After updating: Forget saved devices, remove the iPhone from the TV's Bluetooth list, pair again (old keys are legacy keys).
+  Just Works has no man-in-the-middle protection (same as any keyboard without a display), fine for a TV remote.
 
 WHAT CHANGED
   Everything BTstack needs is now built from source inside this project (btstack/ = trimmed copy of tag v1.2):
@@ -20,8 +43,7 @@ BUILD (on the phone, Theos, iOS 6.1 SDK)
   launchctl list | grep bluemote
 
   Notes: PatchBlueTool / BlueToolH4 is only used by the original package for CSR chipsets on iOS 4 - the
-  iPhone 4s (Broadcom) does not need it. On iPhone the daemon runs without Secure Simple Pairing, which is why
-  Android TV asks for a PIN: type it in the PIN box that the app shows.
+  iPhone 4s (Broadcom) does not need it.
   When the app is closed the daemon powers the chip off after its idle timeout and iOS Bluetooth comes back.
 
 UI (v7.0)

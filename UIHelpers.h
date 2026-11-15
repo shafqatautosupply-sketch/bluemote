@@ -19,14 +19,16 @@ void BTSetButtonToggle(UIButton *b, BOOL on, BTButtonStyle offStyle);           
 void BTSetButtonOn(UIButton *b, BOOL on);
 
 UIColor *BTLinenColor(void);                                                                     /* native iOS 6 linen */
-void BTDrawPanel(CGRect rect, CGFloat radius);                                                   /* brushed metal pad */
+void BTDrawPanel(CGRect rect, CGFloat radius);                                                   /* horizontally brushed aluminium slab (cached) */
 void BTDrawEngravedText(NSString *text, CGRect rect, UIFont *font, NSTextAlignment align);
 
 NSString *BTDeviceDisplayName(NSString *addr);                                                   /* alias / name / fallback */
 
 void BTDrawDarkPanel(CGRect rect, CGFloat radius);                                               /* remote-control body */
 void BTDrawHelpCard(CGRect rect, NSString *text);                                                /* "i" instructions card */
-NSString *BTStatusText(BOOL *connected);                                                         /* status line for the title */
+NSString *BTStatusText(BOOL *connected);
+#define kPrefOkMode         @"okMode"            /* 0 = Select (remote OK / DPAD_CENTER), 1 = Enter (keyboard) */
+void BTSendOK(int phase);                                                                        /* 0 = tap, 1 = key down, 2 = key up (hold = long press) */                                                         /* status line for the title */
 
 #define BTShowKeyboardNotification @"BTShowKeyboardNotification"
 #define BTPasteStateNotification   @"BTPasteStateNotification"

@@ -370,6 +370,11 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
 - (void)setShowHelp:(BOOL)show { showHelp = show; [self setNeedsDisplay]; }
 
+- (void)setHidden:(BOOL)h {                                             /* never leave OK held down if the pad disappears */
+    if (h && zone == 4) [self press:-1];
+    [super setHidden:h];
+}
+
 /* geometry: the D-pad is centred in the box */
 - (CGPoint)middle { return CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds)); }
 - (CGFloat)outerRadius { return MIN(self.bounds.size.width, self.bounds.size.height) / 2.0f - 20.0f; }
@@ -392,16 +397,20 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 }
 
 - (void)sendZone {
-    static const int keys[5] = { 0x52, 0x51, 0x50, 0x4f, 0x28 };       /* up down left right Enter */
-    if (zone >= 0 && zone <= 4) bluemote_sendf("KEY %d", keys[zone]);
+    static const int keys[4] = { 0x52, 0x51, 0x50, 0x4f };             /* up down left right (OK is handled in press:) */
+    if (zone >= 0 && zone <= 3) bluemote_sendf("KEY %d", keys[zone]);
 }
 
 - (void)press:(int)z {
     [self stopRepeat];
+    int old = zone;
     zone = z;
-    if (z >= 0) {
+    if (old == 4 && z != 4) BTSendOK(2);                                /* finger left OK: release the key */
+    if (z == 4 && old != 4) {
+        BTSendOK(1);                                                    /* OK is held down while touched: tap = click, hold = long press */
+    } else if (z >= 0 && z < 4) {
         [self sendZone];
-        if (z < 4) {                                                    /* hold an arrow to repeat */
+        {                                                               /* hold an arrow to repeat */
             repeatTimer = [[NSTimer alloc] initWithFireDate:[NSDate dateWithTimeIntervalSinceNow:0.4]
                                                    interval:0.11 target:self selector:@selector(sendZone) userInfo:nil repeats:YES];
             [[NSRunLoop currentRunLoop] addTimer:repeatTimer forMode:NSRunLoopCommonModes];
@@ -503,7 +512,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     BTDrawEngravedText(@"OK", CGRectMake(center.origin.x, m.y - 10.0f, center.size.width, 22.0f),
                        [UIFont boldSystemFontOfSize:17.0f], NSTextAlignmentCenter);
 
-    if (showHelp) BTDrawHelpCard(self.bounds, @"Tap an arrow to move, hold it to repeat.\nRoll your thumb across the ring to change direction.\nCentre: OK / select.");
+    if (showHelp) BTDrawHelpCard(self.bounds, @"Tap an arrow to move, hold it to repeat.\nRoll your thumb across the ring to change direction.\nCentre: OK / select (hold = long press).");
     CGColorSpaceRelease(cs);
 }
 
@@ -670,7 +679,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
             if (reelsOn) {
                 [self reelsTap];
             } else {
-                bluemote_send("KEY 0x28");       /* Enter = OK */
+                BTSendOK(0);                          /* OK (Select) */
             }
         } else if (maxTouches == 2) {
             bluemote_send("MEDIA playpause");
