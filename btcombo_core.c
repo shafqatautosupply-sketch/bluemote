@@ -25,6 +25,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include "btstack_client.h"
 #include "hci_cmd.h"
 #include "daemon_cmds.h"
@@ -404,43 +405,91 @@ static int media_by_name(const char *name, uint16_t *usage) {
 
 /* ---------------- long paste: typed in small slices so the run loop stays responsive ---------------- */
 
+/* Why paste needs flow control: the BTstack daemon never drops a key, but when the Bluetooth chip / TV link is
+   slower than we send, it stops reading our socket and everything piles up there. When the socket is full our
+   write() BLOCKS - possibly between a key-press and its release. The TV then sees a key held down and auto-repeats
+   it forever ("aaaa pppp"), and Stop cannot work because the thread is stuck in write().
+   So after every small slice we ask the daemon something it answers in order (BTSTACK_GET_VERSION) and wait for the
+   answer: it only comes back once all earlier keys were handed to the chip. The typing speed therefore follows what
+   the link can really deliver, and the socket never fills. */
+
 static char *paste_buf = NULL;
 static volatile int paste_len = 0;
 static volatile int paste_pos = 0;
 static volatile int paste_active = 0;
 static volatile int paste_cancel = 0;
-static volatile int paste_gap_us = 14000;      /* extra pause after each key (reliability vs speed) */
-#define PASTE_SLICE_CHARS 6
+static volatile int paste_wait_ack = 0;        /* 1 while waiting for the daemon's answer */
+static long paste_ack_sent_ms = 0;
+static volatile int paste_gap_us = 12000;      /* extra pause after each key */
+#define PASTE_SLICE_CHARS  4      /* keys typed between two flow-control checks */
+#define PASTE_HOLD_US      12000  /* how long a key stays down */
+#define PASTE_NEWLINE_US   60000  /* extra pause after Enter: the receiver is busy handling the line */
+#define PASTE_ACK_TIMEOUT_MS 4000 /* give up waiting for the daemon after this long and carry on */
+
+#ifndef DAEMON_EVENT_VERSION
+#define DAEMON_EVENT_VERSION 0x63
+#endif
 
 static int queue_line(const char *line);
+
+static long now_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (long)tv.tv_sec * 1000L + (long)(tv.tv_usec / 1000);
+}
 
 static void paste_finish(void) {
     char *b = paste_buf;
     paste_buf = NULL;
     free(b);
     send_keyboard(0, 0);
+    usleep(15000);
+    send_keyboard(0, 0);          /* never leave a key stuck down on the receiver */
     __sync_synchronize();
+    paste_wait_ack = 0;
     paste_active = 0;
+}
+
+static void paste_key(uint8_t mod, uint8_t key, char ch) {
+    send_keyboard(mod, key);
+    usleep(PASTE_HOLD_US);
+    send_keyboard(0, 0);
+    usleep(paste_gap_us);
+    if (ch == '\n' || ch == '\r') usleep(PASTE_NEWLINE_US);
 }
 
 static void paste_slice(void) {
     while (paste_active) {
         if (paste_cancel || !is_connected) { paste_finish(); return; }
+
+        if (paste_wait_ack) {
+            if (now_ms() - paste_ack_sent_ms < PASTE_ACK_TIMEOUT_MS) {
+                /* still waiting for the daemon: yield to the run loop (it reads the daemon's answer, and
+                   STOP / disconnect events), then look again */
+                usleep(3000);
+                if (queue_line("PASTECONT")) return;
+                continue;
+            }
+            paste_wait_ack = 0;   /* no answer in time: carry on rather than hang */
+        }
+
         int n = 0;
         while (n < PASTE_SLICE_CHARS && paste_pos < paste_len) {
             if (paste_cancel) break;
             char ch = paste_buf[paste_pos++];
             uint8_t mod, key;
-            if (ascii_to_hid(ch, &mod, &key)) {
-                key_tap(mod, key);
-                usleep(paste_gap_us);
-            }
+            if (ascii_to_hid(ch, &mod, &key)) paste_key(mod, key, ch);
             n++;
         }
         if (paste_cancel || paste_pos >= paste_len) { paste_finish(); return; }
-        /* yield to the run loop (so STOP, disconnects and Bluetooth events get processed) */
+
+        /* flow control: the answer to this arrives only after the daemon handled every key above */
+        paste_ack_sent_ms = now_ms();
+        paste_wait_ack = 1;
+        bt_send_cmd(&btstack_get_version);
+
         if (queue_line("PASTECONT")) return;
-        /* pipe full: just keep typing */
+        /* pipe full: just keep going */
     }
 }
 
@@ -713,6 +762,7 @@ int btcombo_paste_begin(const char *text, int len) {
     paste_len = len;
     paste_pos = 0;
     paste_cancel = 0;
+    paste_wait_ack = 0;
     __sync_synchronize();
     paste_active = 1;
     if (!queue_line("PASTE")) {       /* could not wake the Bluetooth thread */
@@ -768,6 +818,10 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
         case HCI_EVENT_PACKET:
             switch (packet[0]) {
+                case DAEMON_EVENT_VERSION:        /* answer to our flow-control question while pasting */
+                    paste_wait_ack = 0;
+                    break;
+
                 case BTSTACK_EVENT_POWERON_FAILED:
                     status_text = "Bluetooth power on failed";
                     break;
