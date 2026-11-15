@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.btcombo.BTdaemon</string>
+	<string>com.bluemote.BTdaemon</string>
 	<key>OnDemand</key>
 	<true/>
 	<key>ServiceIPC</key>
@@ -12,12 +12,12 @@
 	<false/>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/bin/BTComboDaemon</string>
+		<string>/usr/bin/BluemoteDaemon</string>
 	</array>
 	<key>StandardOutPath</key>
-	<string>/var/log/BTcombo.log</string>
+	<string>/var/log/Bluemote.log</string>
 	<key>StandardErrorPath</key>
-	<string>/var/log/BTcombo.log</string>
+	<string>/var/log/Bluemote.log</string>
 	<key>Sockets</key>
 	<dict>
 		<key>Listeners</key>
@@ -27,7 +27,7 @@
 			<key>SockType</key>
 			<string>Stream</string>
 			<key>SockPathName</key>
-			<string>/tmp/BTcombo</string>
+			<string>/tmp/Bluemote</string>
 			<key>SockPathMode</key>
 			<integer>438</integer>
 		</dict>

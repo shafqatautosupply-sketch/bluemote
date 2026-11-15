@@ -9,6 +9,9 @@
     UIView *remoteBody;
     UIButton *infoB;
     UIButton *kbB;
+    UIButton *expandB;      /* trackpad-style pad only: collapses the remote to Back / Home / Menu and grows the pad */
+    BOOL expanded;          /* the saved choice (persisted) */
+    BOOL gesturePad;        /* YES while the trackpad-style pad is showing (expand only applies then) */
     RemoteRocker *volR;
     RemoteRocker *chR;
     RemoteButton *reelsB;

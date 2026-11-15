@@ -65,15 +65,15 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
 /* ---------------------------------------------------------------- data */
 
 - (NSString *)statusText {
-    return [NSString stringWithUTF8String:btcombo_status()];
+    return [NSString stringWithUTF8String:bluemote_status()];
 }
 
 - (NSString *)addrAtIndex:(int)i {
-    return [NSString stringWithUTF8String:btcombo_saved_addr(i)];
+    return [NSString stringWithUTF8String:bluemote_saved_addr(i)];
 }
 
 - (int)indexForAddr:(NSString *)addr {
-    int n = btcombo_saved_count();
+    int n = bluemote_saved_count();
     for (int i = 0; i < n; i++) if ([[self addrAtIndex:i] isEqualToString:addr]) return i;
     return -1;
 }
@@ -81,9 +81,9 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
 /* reload only when something visible changed (the table is refreshed twice a second) */
 - (void)refresh {
     NSMutableString *sig = [NSMutableString string];
-    [sig appendFormat:@"%@|%d|%d|%@|", [self statusText], btcombo_pairing_mode(), btcombo_io_mode(),
-        [NSString stringWithUTF8String:btcombo_connected_addr()]];
-    int n = btcombo_saved_count();
+    [sig appendFormat:@"%@|%d|%d|%@|", [self statusText], bluemote_pairing_mode(), bluemote_io_mode(),
+        [NSString stringWithUTF8String:bluemote_connected_addr()]];
+    int n = bluemote_saved_count();
     for (int i = 0; i < n; i++) {
         NSString *a = [self addrAtIndex:i];
         [sig appendFormat:@"%@=%@;", a, BTDeviceDisplayName(a)];
@@ -101,7 +101,7 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)section {
     if (section == SecStatus) return 1;
-    if (section == SecDevices) { int n = btcombo_saved_count(); return n > 0 ? n : 1; }
+    if (section == SecDevices) { int n = bluemote_saved_count(); return n > 0 ? n : 1; }
     return 4;
 }
 
@@ -130,7 +130,7 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    int count = btcombo_saved_count();
+    int count = bluemote_saved_count();
     BOOL deviceRow = (ip.section == SecDevices && count > 0);
     BOOL switchRow = (ip.section == SecPairing && ip.row == RowPasskey);
     NSString *ident = deviceRow ? @"dev" : (switchRow ? @"sw" : @"plain");
@@ -155,7 +155,7 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
     cell.userInteractionEnabled = YES;
 
     if (ip.section == SecStatus) {
-        BOOL connected = btcombo_is_connected();
+        BOOL connected = bluemote_is_connected();
         cell.textLabel.text = [self statusText];
         cell.textLabel.numberOfLines = 0;
         cell.textLabel.textColor = connected ? [UIColor colorWithRed:0.12f green:0.50f blue:0.12f alpha:1.0f]
@@ -171,7 +171,7 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
             cell.accessoryType = UITableViewCellAccessoryNone;
         } else {
             NSString *addr = [self addrAtIndex:(int)ip.row];
-            NSString *current = [NSString stringWithUTF8String:btcombo_connected_addr()];
+            NSString *current = [NSString stringWithUTF8String:bluemote_connected_addr()];
             BOOL isCurrent = [addr isEqualToString:current];
             cell.textLabel.text = BTDeviceDisplayName(addr);
             cell.detailTextLabel.text = [NSString stringWithFormat:@"%@%@", addr, isCurrent ? @"   \u2022   Connected" : @""];
@@ -186,11 +186,11 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
         cell.accessoryType = UITableViewCellAccessoryNone;
         switch (ip.row) {
             case RowPair:
-                cell.textLabel.text = btcombo_pairing_mode() ? @"Cancel pairing mode" : @"Pair new device";
+                cell.textLabel.text = bluemote_pairing_mode() ? @"Cancel pairing mode" : @"Pair new device";
                 break;
             case RowDisconnect:
                 cell.textLabel.text = @"Disconnect";
-                if (!btcombo_is_connected()) {
+                if (!bluemote_is_connected()) {
                     cell.textLabel.textColor = [UIColor lightGrayColor];
                     cell.selectionStyle = UITableViewCellSelectionStyleNone;
                 }
@@ -200,7 +200,7 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
                 cell.textLabel.textAlignment = NSTextAlignmentLeft;
                 cell.textLabel.textColor = [UIColor blackColor];
                 cell.selectionStyle = UITableViewCellSelectionStyleNone;
-                ((UISwitch *)cell.accessoryView).on = (btcombo_io_mode() == 2);
+                ((UISwitch *)cell.accessoryView).on = (bluemote_io_mode() == 2);
                 break;
             default:
                 cell.textLabel.text = @"Forget all devices";
@@ -213,18 +213,18 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
-    if (ip.section == SecDevices && btcombo_saved_count() > 0) {
+    if (ip.section == SecDevices && bluemote_saved_count() > 0) {
         [selectedAddr release];
         selectedAddr = [[self addrAtIndex:(int)ip.row] copy];
         [self showDeviceSheet];
     } else if (ip.section == SecPairing) {
         switch (ip.row) {
             case RowPair:
-                btcombo_send(btcombo_pairing_mode() ? "PAIRSTOP" : "PAIR");
+                bluemote_send(bluemote_pairing_mode() ? "PAIRSTOP" : "PAIR");
                 [self performSelector:@selector(refresh) withObject:nil afterDelay:0.2];
                 break;
             case RowDisconnect:
-                if (btcombo_is_connected()) btcombo_send("DISCONNECT");
+                if (bluemote_is_connected()) bluemote_send("DISCONNECT");
                 break;
             case RowForgetAll: {
                 UIAlertView *a = [[UIAlertView alloc] initWithTitle:@"Forget all devices?"
@@ -241,13 +241,13 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
 }
 
 - (void)passkeyChanged:(UISwitch *)sw {
-    btcombo_send(sw.on ? "IOCAP 2" : "IOCAP 3");
+    bluemote_send(sw.on ? "IOCAP 2" : "IOCAP 3");
 }
 
 /* ---------------------------------------------------------------- device actions */
 
 - (void)showDeviceSheet {
-    NSString *current = [NSString stringWithUTF8String:btcombo_connected_addr()];
+    NSString *current = [NSString stringWithUTF8String:bluemote_connected_addr()];
     BOOL isCurrent = [selectedAddr isEqualToString:current];
     UIActionSheet *sheet = [[UIActionSheet alloc] initWithTitle:BTDeviceDisplayName(selectedAddr)
                                                        delegate:self
@@ -262,11 +262,11 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
     NSString *t = [sheet buttonTitleAtIndex:idx];
     int i = [self indexForAddr:selectedAddr];
     if ([t isEqualToString:@"Connect"]) {
-        if (i >= 0) btcombo_sendf("CONNECT %d", i);
+        if (i >= 0) bluemote_sendf("CONNECT %d", i);
     } else if ([t isEqualToString:@"Disconnect"]) {
-        btcombo_send("DISCONNECT");
+        bluemote_send("DISCONNECT");
     } else if ([t isEqualToString:@"Forget"]) {
-        if (i >= 0) btcombo_sendf("FORGETDEV %d", i);
+        if (i >= 0) bluemote_sendf("FORGETDEV %d", i);
     } else if ([t isEqualToString:@"Rename"]) {
         UIAlertView *a = [[UIAlertView alloc] initWithTitle:@"Rename device" message:selectedAddr delegate:self
                                           cancelButtonTitle:@"Cancel" otherButtonTitles:@"Save", nil];
@@ -290,7 +290,7 @@ enum { RowPair = 0, RowDisconnect = 1, RowPasskey = 2, RowForgetAll = 3 };
         else [d setObject:text forKey:key];
         [self refresh];
     } else if (alertView.tag == TAG_FORGET_ALL) {
-        btcombo_send("FORGET");
+        bluemote_send("FORGET");
         [self performSelector:@selector(refresh) withObject:nil afterDelay:0.2];
     }
 }

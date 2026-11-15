@@ -1,6 +1,6 @@
 #import "AppDelegate.h"
 #import "MainViewController.h"
-#include "btcombo_core.h"
+#include "bluemote_core.h"
 
 @implementation AppDelegate
 
@@ -10,13 +10,25 @@
     /* pairing keys live in the app's own private folder (not in Documents); an old key file is moved there once */
     NSArray *dirs = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
     NSString *base = [dirs count] ? [dirs objectAtIndex:0] : @"/var/mobile/Library/Application Support";
-    NSString *dir = [base stringByAppendingPathComponent:@"BTCombo"];
+    NSString *dir = [base stringByAppendingPathComponent:@"Bluemote"];
+
+    /* coming from the old "BTCombo" app: move its pairing keys folder over once, and copy its settings */
+    NSString *oldDir = [base stringByAppendingPathComponent:@"BTCombo"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if ([fm fileExistsAtPath:oldDir] && ![fm fileExistsAtPath:dir]) [fm moveItemAtPath:oldDir toPath:dir error:NULL];
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    if (![ud boolForKey:@"migratedFromBTCombo"]) {
+        NSDictionary *oldPrefs = [ud persistentDomainForName:@"com.btcombo.app"];
+        for (NSString *k in oldPrefs) if ([ud objectForKey:k] == nil) [ud setObject:[oldPrefs objectForKey:k] forKey:k];
+        [ud setBool:YES forKey:@"migratedFromBTCombo"];
+        [ud synchronize];
+    }
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES
                                                attributes:[NSDictionary dictionaryWithObject:[NSNumber numberWithUnsignedLong:0700]
                                                                                       forKey:NSFilePosixPermissions]
                                                     error:NULL];
-    btcombo_set_data_dir([dir fileSystemRepresentation]);
-    btcombo_start();                              /* Bluetooth runs on its own thread */
+    bluemote_set_data_dir([dir fileSystemRepresentation]);
+    bluemote_start();                              /* Bluetooth runs on its own thread */
 
     window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     window.backgroundColor = [UIColor blackColor];

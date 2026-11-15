@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# BTCombo v7.0 - standalone: app + BTstack v1.2 daemon built from source
+# Bluemote v7.0 - standalone: app + BTstack v1.2 daemon built from source
 # Theos, iOS 6.1 SDK, armv7 (iPhone 4s)
 # ---------------------------------------------------------------
 export ARCHS = armv7
@@ -28,17 +28,17 @@ BTSTACK_CLIENT_FILES = \
 
 include $(THEOS)/makefiles/common.mk
 
-APPLICATION_NAME = BTCombo
-BTCombo_FILES = main.m AppDelegate.m MainViewController.m SettingsViewController.m PairViewController.m StatusTitleView.m TrackpadView.m KeyboardView.m MediaView.m UIHelpers.m btcombo_core.c $(BTSTACK_CLIENT_FILES)
-BTCombo_FRAMEWORKS = UIKit Foundation CoreGraphics CoreFoundation QuartzCore AudioToolbox
-BTCombo_CFLAGS = -std=gnu99 $(BT_INC) -Wno-error
+APPLICATION_NAME = Bluemote
+Bluemote_FILES = main.m AppDelegate.m MainViewController.m SettingsViewController.m PairViewController.m StatusTitleView.m TrackpadView.m KeyboardView.m MediaView.m UIHelpers.m bluemote_core.c $(BTSTACK_CLIENT_FILES)
+Bluemote_FRAMEWORKS = UIKit Foundation CoreGraphics CoreFoundation QuartzCore AudioToolbox
+Bluemote_CFLAGS = -std=gnu99 $(BT_INC) -Wno-error
 
 # BTstack daemon (the iOS port of v1.2), runs as root under launchd.
 # NOTE: do not put "#" comment lines inside this list - a comment that ends in a backslash swallows the
 # following lines (that is how att_server.c, daemon.c, btstack_control_iphone.m ... silently disappeared before).
 # main() lives in btstack/platform/daemon/src/daemon.c - do not add another main.m.
-TOOL_NAME = BTComboDaemon
-BTComboDaemon_FILES = $(BTSTACK_CLIENT_FILES) \
+TOOL_NAME = BluemoteDaemon
+BluemoteDaemon_FILES = $(BTSTACK_CLIENT_FILES) \
 	btstack/src/ad_parser.c \
 	btstack/src/btstack_memory.c \
 	btstack/src/btstack_memory_pool.c \
@@ -56,11 +56,11 @@ BTComboDaemon_FILES = $(BTSTACK_CLIENT_FILES) \
 	btstack/port/ios/src/hci_transport_h4_iphone.c \
 	btstack/port/ios/src/platform_iphone.m \
 	btstack/port/ios/SpringBoardAccess/SpringBoardAccess.c
-BTComboDaemon_FRAMEWORKS = Foundation CoreFoundation
-BTComboDaemon_PRIVATE_FRAMEWORKS = IOKit
-# BTCOMBO_FORCE_LOGGING + text log type: daemon log lines (incl. iphone_on / BlueTool output) go to /var/log/BTcombo.log.
+BluemoteDaemon_FRAMEWORKS = Foundation CoreFoundation
+BluemoteDaemon_PRIVATE_FRAMEWORKS = IOKit
+# BLUEMOTE_FORCE_LOGGING + text log type: daemon log lines (incl. iphone_on / BlueTool output) go to /var/log/Bluemote.log.
 # Remove both flags once everything works.
-BTComboDaemon_CFLAGS = -std=gnu99 $(BT_INC) -Wno-unused-variable -Wno-error -DBTCOMBO_FORCE_LOGGING -DBTCOMBO_QUIET_WHEN_NOT_LOGGING -DBTSTACK_LOG_TYPE=HCI_DUMP_STDOUT
+BluemoteDaemon_CFLAGS = -std=gnu99 $(BT_INC) -Wno-unused-variable -Wno-error -DBLUEMOTE_FORCE_LOGGING -DBLUEMOTE_QUIET_WHEN_NOT_LOGGING -DBTSTACK_LOG_TYPE=HCI_DUMP_STDOUT
 
 include $(THEOS_MAKE_PATH)/application.mk
 include $(THEOS_MAKE_PATH)/tool.mk

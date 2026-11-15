@@ -378,8 +378,8 @@ void hci_dump_log_va_arg(int log_level, const char * format, va_list argptr){
     }
 #endif
 
-#ifdef BTCOMBO_QUIET_WHEN_NOT_LOGGING
-    return;   // BTCombo: logging not enabled -> print nothing (otherwise every log_info goes to stdout)
+#ifdef BLUEMOTE_QUIET_WHEN_NOT_LOGGING
+    return;   // Bluemote: logging not enabled -> print nothing (otherwise every log_info goes to stdout)
 #endif
     printf_timestamp();
     printf("LOG -- ");

@@ -206,7 +206,7 @@ static int h4_open(void)
 
     // make raw and set speed
     cfmakeraw(&toptions);
-    // BTCombo patch: v1.2 computed 'baud' above but then used baudrate_init, which is 0 on iPhone (native speed),
+    // Bluemote patch: v1.2 computed 'baud' above but then used baudrate_init, which is 0 on iPhone (native speed),
     // so the UART was set to 0 baud while BlueTool had booted the chip at the IORegistry transport speed.
     speed_t brate = (speed_t) baud;
     log_info("h4_open: UART speed %u", (unsigned) baud);
@@ -273,7 +273,7 @@ static int h4_send_packet(uint8_t packet_type, uint8_t * packet, int size){
     // wake Bluetooth module
     h4_enforce_wake_on();
 
-    // BTCombo: write in small chunks, retry a bounded number of times and log errors. The original looped forever
+    // Bluemote: write in small chunks, retry a bounded number of times and log errors. The original looped forever
     // (silently freezing the whole daemon) when write() kept failing.
     int fd = hci_transport_h4->uart_fd;
     int retries = 0;

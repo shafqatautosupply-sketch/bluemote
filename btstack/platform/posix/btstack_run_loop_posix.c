@@ -60,7 +60,7 @@
 #include <time.h>
 #include <unistd.h>
 
-// BTCombo: the iOS SDKs before iOS 10 define _POSIX_MONOTONIC_CLOCK (as -1) but have no clock_gettime(),
+// Bluemote: the iOS SDKs before iOS 10 define _POSIX_MONOTONIC_CLOCK (as -1) but have no clock_gettime(),
 // so on Apple platforms always use the gettimeofday() fallback below.
 #if defined(_POSIX_MONOTONIC_CLOCK) && !defined(__APPLE__)
 #define BT_USE_MONOTONIC

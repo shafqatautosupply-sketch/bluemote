@@ -1432,7 +1432,7 @@ static void hci_initializing_run(void){
             // expand '00:00:00:00:00:00' in name with bd_addr
             btstack_replace_bd_addr_placeholder(&packet[3], bytes_to_copy, hci_stack->local_bd_addr);
             {
-                // BTCombo fix: hci_send_cmd_va_arg() releases the buffer for synchronous transports, but these
+                // Bluemote fix: hci_send_cmd_va_arg() releases the buffer for synchronous transports, but these
                 // hand-built init commands did not. With a synchronous transport (no can_send_packet_now, e.g. the
                 // iPhone one) the buffer stayed reserved, hci_can_send_command_packet_now() stayed false and init hung.
                 int err = hci_send_cmd_packet(packet, HCI_CMD_HEADER_SIZE + DEVICE_NAME_LEN);
@@ -1483,7 +1483,7 @@ static void hci_initializing_run(void){
                 btstack_replace_bd_addr_placeholder(&packet[offset], bytes_to_copy, hci_stack->local_bd_addr);
             }
             {
-                // BTCombo fix: hci_send_cmd_va_arg() releases the buffer for synchronous transports, but these
+                // Bluemote fix: hci_send_cmd_va_arg() releases the buffer for synchronous transports, but these
                 // hand-built init commands did not. With a synchronous transport (no can_send_packet_now, e.g. the
                 // iPhone one) the buffer stayed reserved, hci_can_send_command_packet_now() stayed false and init hung.
                 int err = hci_send_cmd_packet(packet, HCI_CMD_HEADER_SIZE + 1 + EXTENDED_INQUIRY_RESPONSE_DATA_LEN);
@@ -1896,8 +1896,8 @@ static void hci_initializing_event_handler(const uint8_t * packet, uint16_t size
             return;
 #endif
             
-#ifdef BTCOMBO_SKIP_EIR
-        // BTCombo: do not write the 244-byte Extended Inquiry Response during init (not needed for a HID device)
+#ifdef BLUEMOTE_SKIP_EIR
+        // Bluemote: do not write the 244-byte Extended Inquiry Response during init (not needed for a HID device)
         case HCI_INIT_W4_WRITE_LOCAL_NAME:
             hci_stack->substate = HCI_INIT_WRITE_INQUIRY_MODE;
             return;

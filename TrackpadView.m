@@ -69,7 +69,7 @@
         startC = BTCentroid(all, self);
         if (n == 1 && (now - lastTapEnd) < 0.3) {
             dragging = YES;
-            btcombo_send("MB 1");
+            bluemote_send("MB 1");
         }
     }
     if (n > maxTouches) maxTouches = n;
@@ -114,12 +114,12 @@
         BOOL natural = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefNaturalScroll];
         int sv = (int)(scrollAccY / 10.0f);
         if (sv != 0) {
-            btcombo_sendf("W %d", natural ? sv : -sv);     /* wheel: + = up */
+            bluemote_sendf("W %d", natural ? sv : -sv);     /* wheel: + = up */
             scrollAccY -= sv * 10.0f;
         }
         int sh = (int)(scrollAccX / 10.0f);
         if (sh != 0) {
-            btcombo_sendf("HW %d", natural ? -sh : sh);    /* pan: + = right */
+            bluemote_sendf("HW %d", natural ? -sh : sh);    /* pan: + = right */
             scrollAccX -= sh * 10.0f;
         }
     } else if (n == 1 && maxTouches == 1) {
@@ -132,7 +132,7 @@
         int iy = (int)fy;
         remX = fx - ix;
         remY = fy - iy;
-        if (ix != 0 || iy != 0) btcombo_sendf("M %d %d", ix, iy);
+        if (ix != 0 || iy != 0) bluemote_sendf("M %d %d", ix, iy);
     }
 }
 
@@ -146,7 +146,7 @@
     gestureActive = NO;
     [startPoints removeAllObjects];
     if (dragging) {
-        btcombo_send("MB 0");
+        bluemote_send("MB 0");
         dragging = NO;
         lastTapEnd = 0;
         return;
@@ -154,13 +154,13 @@
     BOOL tapOK = allowTap && !moved && (multi ? (dur < 0.45 && stagger < 0.6) : (dur < 0.3));
     if (tapOK) {
         if (maxTouches == 1) {
-            btcombo_send("CLICK 1");
+            bluemote_send("CLICK 1");
             lastTapEnd = now;
         } else if (maxTouches == 2) {
-            btcombo_send("CLICK 2");
+            bluemote_send("CLICK 2");
             lastTapEnd = 0;
         } else {
-            btcombo_send("CLICK 4");
+            bluemote_send("CLICK 4");
             lastTapEnd = 0;
         }
     } else {
@@ -243,9 +243,9 @@
     [[NSNotificationCenter defaultCenter] postNotificationName:BTShowKeyboardNotification object:nil];
 }
 
-- (void)leftTapped  { btcombo_send("CLICK 1"); }
-- (void)rightTapped { btcombo_send("CLICK 2"); }
-- (void)backTapped  { btcombo_send("MEDIA back"); }
-- (void)homeTapped  { btcombo_send("MEDIA home"); }
+- (void)leftTapped  { bluemote_send("CLICK 1"); }
+- (void)rightTapped { bluemote_send("CLICK 2"); }
+- (void)backTapped  { bluemote_send("MEDIA back"); }
+- (void)homeTapped  { bluemote_send("MEDIA home"); }
 
 @end

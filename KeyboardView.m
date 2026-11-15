@@ -231,7 +231,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 
 - (void)keyDown:(UIButton *)b {
     int m = [self takeMods];
-    btcombo_sendf("KEY %d %d", (int)b.tag, m);
+    bluemote_sendf("KEY %d %d", (int)b.tag, m);
     [self stopRepeat];
     repeatUsage = (int)b.tag;
     /* hold a key: after 0.45 s it repeats about 11 times a second */
@@ -243,23 +243,23 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 
 - (void)keyUp:(UIButton *)b { [self stopRepeat]; }
 
-- (void)repeatFire { btcombo_sendf("KEY %d 0", repeatUsage); }
+- (void)repeatFire { bluemote_sendf("KEY %d 0", repeatUsage); }
 
 /* ---------------------------------------------------------------- paste / stop paste */
 
-- (BOOL)isPasting { return btcombo_paste_active() != 0; }
+- (BOOL)isPasting { return bluemote_paste_active() != 0; }
 
 - (void)notifyPasteState {
     [[NSNotificationCenter defaultCenter] postNotificationName:BTPasteStateNotification object:nil];
 }
 
 - (void)togglePaste {
-    if (btcombo_paste_active()) {
-        btcombo_paste_cancel();
+    if (bluemote_paste_active()) {
+        bluemote_paste_cancel();
         status.text = @"Stopping...";
         return;
     }
-    if (!btcombo_is_connected()) {
+    if (!bluemote_is_connected()) {
         status.text = @"Not connected to a device. Pair or reconnect first.";
         return;
     }
@@ -274,7 +274,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
         status.text = @"Nothing in the clipboard can be typed (only unsupported characters).";
         return;
     }
-    if (btcombo_paste_begin((const char *)[d bytes], (int)[d length]) != 0) {
+    if (bluemote_paste_begin((const char *)[d bytes], (int)[d length]) != 0) {
         status.text = @"Paste is busy, try again in a moment.";
         return;
     }
@@ -288,12 +288,12 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 }
 
 - (void)pasteTick {
-    int total = btcombo_paste_total();
-    int pos = btcombo_paste_progress();
+    int total = bluemote_paste_total();
+    int pos = bluemote_paste_progress();
     int pct = total > 0 ? (int)((long long)pos * 100 / total) : 0;
     NSString *skipNote = pasteSkipped > 0
         ? [NSString stringWithFormat:@" (%d unsupported skipped)", pasteSkipped] : @"";
-    if (btcombo_paste_active()) {
+    if (bluemote_paste_active()) {
         status.text = [NSString stringWithFormat:@"Pasting %d%%  (%d / %d)%@", pct, pos, total, skipNote];
     } else {
         [pasteTimer invalidate];
@@ -310,19 +310,19 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (BOOL)textField:(UITextField *)tf shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string {
     int m = [self takeMods];
     if ([string length] == 0) {
-        btcombo_sendf("KEY 42 %d", m);          /* Backspace */
+        bluemote_sendf("KEY 42 %d", m);          /* Backspace */
     } else {
         NSString *clean = [string stringByReplacingOccurrencesOfString:@"\n" withString:@""];
         clean = [clean stringByReplacingOccurrencesOfString:@"\r" withString:@""];
         const char *u = [clean UTF8String];
-        if (u && u[0]) btcombo_sendf("TYPEMOD %d %s", m, u);
+        if (u && u[0]) bluemote_sendf("TYPEMOD %d %s", m, u);
     }
     return NO;                                  /* keep the sentinel, never store text */
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)tf {
     int m = [self takeMods];
-    btcombo_sendf("KEY 40 %d", m);              /* Enter */
+    bluemote_sendf("KEY 40 %d", m);              /* Enter */
     return NO;
 }
 

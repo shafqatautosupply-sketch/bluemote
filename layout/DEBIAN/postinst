@@ -1,10 +1,17 @@
 #!/bin/sh
-PLIST=/Library/LaunchDaemons/com.btcombo.BTdaemon.plist
-chown root:wheel $PLIST /usr/bin/BTComboDaemon
+# clean up a previous "BTCombo" install so the old daemon does not keep running next to the new one
+OLDPLIST=/Library/LaunchDaemons/com.btcombo.BTdaemon.plist
+if [ -f $OLDPLIST ]; then
+    /bin/launchctl unload $OLDPLIST >/dev/null 2>&1
+    rm -f $OLDPLIST
+fi
+rm -f /usr/bin/BTComboDaemon /tmp/BTcombo /var/log/BTcombo.log /var/mobile/btcombo-debug
+PLIST=/Library/LaunchDaemons/com.bluemote.BTdaemon.plist
+chown root:wheel $PLIST /usr/bin/BluemoteDaemon
 chmod 644 $PLIST
-chmod 755 /usr/bin/BTComboDaemon
-touch /var/log/BTcombo.log
-chmod 644 /var/log/BTcombo.log
+chmod 755 /usr/bin/BluemoteDaemon
+touch /var/log/Bluemote.log
+chmod 644 /var/log/Bluemote.log
 /bin/launchctl unload $PLIST >/dev/null 2>&1
 /bin/launchctl load $PLIST >/dev/null 2>&1
 exit 0

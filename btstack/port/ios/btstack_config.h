@@ -30,7 +30,7 @@
 #define HAVE_TRANSPORT_H4
 #define UART_DEVICE "/dev/tty.bluetooth"
 #define UART_SPEED 921600
-// BTCombo: the app (client library) and the launchd job talk over /tmp/BTcombo, not TCP
+// Bluemote: the app (client library) and the launchd job talk over /tmp/Bluemote, not TCP
 #define HAVE_UNIX_SOCKETS
 #define USE_LAUNCHD
 #define USE_SPRINGBOARD

@@ -255,7 +255,7 @@ static UIImage *BTBarIcon(NSString *name) {
     [titleView setStatus:text connected:connected];
 
     /* the TV asked for a PIN / passkey: prompt on whatever screen we are on */
-    int req = btcombo_pin_request();
+    int req = bluemote_pin_request();
     if (req != 0 && pinAlert == nil) {
         [self showPinAlert:req];
     } else if (req == 0 && pinAlert != nil) {
@@ -283,13 +283,13 @@ static UIImage *BTBarIcon(NSString *name) {
 - (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex {
     if (alertView != pinAlert || pinAutoDismiss) return;
     if (buttonIndex == [alertView cancelButtonIndex]) {
-        btcombo_send("PINCANCEL");
+        bluemote_send("PINCANCEL");
         return;
     }
     NSString *code = [[[alertView textFieldAtIndex:0] text]
         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if ([code length] == 0) btcombo_send("PINCANCEL");
-    else btcombo_sendf("PIN %s", [code UTF8String]);
+    if ([code length] == 0) bluemote_send("PINCANCEL");
+    else bluemote_sendf("PIN %s", [code UTF8String]);
 }
 
 - (void)alertView:(UIAlertView *)alertView didDismissWithButtonIndex:(NSInteger)buttonIndex {

@@ -1,5 +1,5 @@
-Package: com.btcombo.app
-Name: BT Combo
+Package: com.bluemote.app
+Name: Bluemote
 Version: 5.0.0
 Architecture: iphoneos-arm
 Description: iPhone as a Bluetooth trackpad, keyboard and media remote (standalone, BTstack 1.2 inside)
@@ -7,3 +7,5 @@ Maintainer: you
 Author: you
 Section: Utilities
 Depends: firmware (>= 6.0)
+Replaces: com.btcombo.app
+Conflicts: com.btcombo.app

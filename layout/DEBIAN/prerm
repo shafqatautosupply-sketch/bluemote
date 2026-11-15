@@ -1,4 +1,4 @@
 #!/bin/sh
-/bin/launchctl unload /Library/LaunchDaemons/com.btcombo.BTdaemon.plist >/dev/null 2>&1
-rm -f /tmp/BTcombo
+/bin/launchctl unload /Library/LaunchDaemons/com.bluemote.BTdaemon.plist >/dev/null 2>&1
+rm -f /tmp/Bluemote
 exit 0

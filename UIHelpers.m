@@ -205,10 +205,10 @@ void BTDrawHelpCard(CGRect rect, NSString *text) {
 }
 
 NSString *BTStatusText(BOOL *connectedOut) {
-    BOOL connected = btcombo_is_connected();
-    NSString *text = [NSString stringWithUTF8String:btcombo_status()];
+    BOOL connected = bluemote_is_connected();
+    NSString *text = [NSString stringWithUTF8String:bluemote_status()];
     if (connected) {
-        NSString *addr = [NSString stringWithUTF8String:btcombo_connected_addr()];
+        NSString *addr = [NSString stringWithUTF8String:bluemote_connected_addr()];
         if ([addr length]) text = [NSString stringWithFormat:@"Connected \u2013 %@", BTDeviceDisplayName(addr)];
     }
     if (connectedOut) *connectedOut = connected;
@@ -222,7 +222,7 @@ NSString *BTDeviceDisplayName(NSString *addr) {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     NSString *alias = [d stringForKey:[@"alias." stringByAppendingString:addr]];
     if ([alias length]) return alias;
-    const char *u = btcombo_device_name([addr UTF8String]);
+    const char *u = bluemote_device_name([addr UTF8String]);
     NSString *name = (u && u[0]) ? [NSString stringWithUTF8String:u] : nil;
     NSString *nameKey = [@"name." stringByAppendingString:addr];
     if ([name length]) {                                       /* remember the name read from the device */

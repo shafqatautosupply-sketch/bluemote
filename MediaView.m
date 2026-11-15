@@ -126,7 +126,11 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 @implementation RemoteBody
 - (id)initWithFrame:(CGRect)f {
     self = [super initWithFrame:f];
-    if (self) { self.backgroundColor = [UIColor clearColor]; self.opaque = NO; }
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;      /* it shrinks / grows: redraw so the rounded corners stay round */
+    }
     return self;
 }
 - (void)drawRect:(CGRect)rect { BTDrawDarkPanel(self.bounds, 16.0f); }
@@ -240,7 +244,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     [super dealloc];
 }
 
-- (void)fire { btcombo_send(half == 1 ? upCmd : downCmd); }
+- (void)fire { bluemote_send(half == 1 ? upCmd : downCmd); }
 
 - (void)stopRepeat {
     [repeatTimer invalidate];
@@ -353,6 +357,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
         zone = -1;
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;      /* redraw (not stretch) when the size changes, so corners stay round */
     }
     return self;
 }
@@ -388,7 +393,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
 - (void)sendZone {
     static const int keys[5] = { 0x52, 0x51, 0x50, 0x4f, 0x28 };       /* up down left right Enter */
-    if (zone >= 0 && zone <= 4) btcombo_sendf("KEY %d", keys[zone]);
+    if (zone >= 0 && zone <= 4) bluemote_sendf("KEY %d", keys[zone]);
 }
 
 - (void)press:(int)z {
@@ -529,6 +534,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
         self.multipleTouchEnabled = YES;
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;      /* redraw (not stretch) when the size changes, so corners stay round */
     }
     return self;
 }
@@ -562,9 +568,9 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 - (void)reelsGo:(BOOL)down {
     if (reelsSwap) down = !down;
     switch (reelsMethod) {
-        case 0:  btcombo_send(down ? "KEY 0x51" : "KEY 0x52"); break;     /* Down / Up arrow */
-        case 1:  btcombo_send(down ? "W -4" : "W 4"); break;              /* mouse wheel */
-        default: btcombo_send(down ? "SWIPE 0 -450" : "SWIPE 0 450"); break; /* finger-drag swipe */
+        case 0:  bluemote_send(down ? "KEY 0x51" : "KEY 0x52"); break;     /* Down / Up arrow */
+        case 1:  bluemote_send(down ? "W -4" : "W 4"); break;              /* mouse wheel */
+        default: bluemote_send(down ? "SWIPE 0 -450" : "SWIPE 0 450"); break; /* finger-drag swipe */
     }
 }
 
@@ -588,10 +594,10 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     if (!gestureActive || moved || longFired) return;
     if (maxTouches == 1) {
         longFired = YES;
-        btcombo_send("MEDIA back");
+        bluemote_send("MEDIA back");
     } else if (maxTouches == 2) {
         longFired = YES;
-        btcombo_send("MEDIA home");
+        bluemote_send("MEDIA home");
     }
 }
 
@@ -635,16 +641,16 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
         accX += dx;
         accY += dy;
         if (fabsf(accX) >= STEP && fabsf(accX) >= fabsf(accY)) {
-            btcombo_send(accX > 0 ? "KEY 0x4f" : "KEY 0x50");   /* right / left */
+            bluemote_send(accX > 0 ? "KEY 0x4f" : "KEY 0x50");   /* right / left */
             accX = accY = 0;
         } else if (fabsf(accY) >= STEP) {
-            btcombo_send(accY > 0 ? "KEY 0x51" : "KEY 0x52");   /* down / up */
+            bluemote_send(accY > 0 ? "KEY 0x51" : "KEY 0x52");   /* down / up */
             accX = accY = 0;
         }
     } else if (n == 2 && maxTouches == 2) {
         volAcc += dy;
         if (fabsf(volAcc) >= 22.0f) {
-            btcombo_send(volAcc < 0 ? "MEDIA volup" : "MEDIA voldown");
+            bluemote_send(volAcc < 0 ? "MEDIA volup" : "MEDIA voldown");
             volAcc = 0;
             volFired = YES;
         }
@@ -664,15 +670,15 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
             if (reelsOn) {
                 [self reelsTap];
             } else {
-                btcombo_send("KEY 0x28");       /* Enter = OK */
+                bluemote_send("KEY 0x28");       /* Enter = OK */
             }
         } else if (maxTouches == 2) {
-            btcombo_send("MEDIA playpause");
+            bluemote_send("MEDIA playpause");
         } else if (maxTouches >= 3) {
-            btcombo_send("MEDIA mute");
+            bluemote_send("MEDIA mute");
         }
     } else if (maxTouches == 2 && !volFired && !reelsOn && fabsf(tdx) > 60.0f && fabsf(tdx) > 2.0f * fabsf(tdy)) {
-        btcombo_send(tdx > 0 ? "MEDIA next" : "MEDIA prev");
+        bluemote_send(tdx > 0 ? "MEDIA next" : "MEDIA prev");
     }
 }
 
@@ -733,6 +739,9 @@ static const char *kRemoteCmds[10] = {
         [kbB setImage:[UIImage imageNamed:@"glyph_keyboard.png"] forState:UIControlStateNormal];
         [self addSubview:kbB];
 
+        expandB = BTMakeStyledButton([NSString stringWithUTF8String:"\xE2\x96\xBC"], BTStyleGray, self, @selector(toggleExpand));   /* down arrow = grow the pad */
+        [self addSubview:expandB];
+
         remoteBody = [[RemoteBody alloc] initWithFrame:CGRectZero];
         [self addSubview:remoteBody];
         [remoteBody release];
@@ -757,6 +766,7 @@ static const char *kRemoteCmds[10] = {
         muteB  = [self addRemote:GMute  tag:3];
         reelsB = [self addRemote:GReels tag:10];
 
+        expanded = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefMediaExpanded];   /* remember the last position */
         [self reloadSettings];
     }
     return self;
@@ -769,13 +779,14 @@ static const char *kRemoteCmds[10] = {
 
 - (void)layoutSubviews {
     CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-    CGFloat m = 8.0f, remoteH = 176.0f;
+    CGFloat m = 8.0f, remoteH = (expanded && gesturePad) ? 66.0f : 176.0f;   /* expanded: only the Back / Home / Menu row is left */
     CGRect remote = CGRectMake(m, h - remoteH - m, w - 2 * m, remoteH);
     CGRect box = CGRectMake(m, m, w - 2 * m, h - remoteH - 3 * m);
     panel.frame = box;
     dpad.frame = box;
     infoB.frame = CGRectMake(box.origin.x + 6.0f, box.origin.y + 6.0f, 30.0f, 30.0f);
     kbB.frame = CGRectMake(CGRectGetMaxX(box) - 6.0f - 42.0f, box.origin.y + 8.0f, 42.0f, 30.0f);
+    expandB.frame = CGRectMake(CGRectGetMaxX(box) - 6.0f - 34.0f, CGRectGetMaxY(box) - 6.0f - 28.0f, 34.0f, 28.0f);
 
     remoteBody.frame = remote;
     CGFloat rw = remote.size.width;
@@ -801,9 +812,46 @@ static const char *kRemoteCmds[10] = {
     BOOL useDpad = (padMode == 0 && !reelsOn);                          /* Reels shows a plain pad, like the trackpad */
     dpad.hidden = !useDpad;
     panel.hidden = useDpad;
+    expandB.hidden = useDpad;                                           /* expand is only for the trackpad-style pad */
+    gesturePad = !useDpad;                                              /* the D-pad always shows the full remote; the saved choice is kept */
+    [self setNeedsLayout];
+    [self updateExpandedUI];
     [reelsB setToggled:reelsOn];
     [panel setShowHelp:helpOn];
     [dpad setShowHelp:helpOn];
+}
+
+/* everything in the remote block except Back / Home / Menu (the first three centre buttons) */
+- (void)setExtrasAlpha:(CGFloat)a {
+    BOOL on = (a > 0.5f);
+    NSMutableArray *extras = [NSMutableArray arrayWithObjects:volR, chR, muteB, reelsB, nil];
+    for (int i = 3; i < (int)[centerButtons count]; i++) [extras addObject:[centerButtons objectAtIndex:i]];
+    for (UIView *v in extras) {
+        v.alpha = a;
+        v.userInteractionEnabled = on;
+    }
+}
+
+- (void)updateExpandedUI {
+    BOOL ex = (expanded && gesturePad);
+    [expandB setTitle:[NSString stringWithUTF8String:(ex ? "\xE2\x96\xB2" : "\xE2\x96\xBC")] forState:UIControlStateNormal];
+    [self setExtrasAlpha:(ex ? 0.0f : 1.0f)];
+}
+
+- (void)toggleExpand {
+    expanded = !expanded;
+    [[NSUserDefaults standardUserDefaults] setBool:expanded forKey:kPrefMediaExpanded];   /* remembered for next time */
+    [expandB setTitle:[NSString stringWithUTF8String:(expanded ? "\xE2\x96\xB2" : "\xE2\x96\xBC")] forState:UIControlStateNormal];
+    UIViewAnimationOptions o = UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState |
+                               UIViewAnimationOptionAllowUserInteraction;
+    /* the remote block shrinks and the pad grows into the space */
+    [UIView animateWithDuration:0.38 delay:0.0 options:o
+        animations:^{ [self setNeedsLayout]; [self layoutIfNeeded]; }
+        completion:nil];
+    /* the extra buttons fade out quickly when collapsing, and come back after the block has grown again */
+    [UIView animateWithDuration:0.18 delay:(expanded ? 0.0 : 0.20) options:o
+        animations:^{ [self setExtrasAlpha:(expanded ? 0.0f : 1.0f)]; }
+        completion:nil];
 }
 
 - (void)infoTapped {
@@ -823,7 +871,7 @@ static const char *kRemoteCmds[10] = {
         [self reloadSettings];
         return;
     }
-    if (b.tag >= 0 && b.tag < 10) btcombo_send(kRemoteCmds[b.tag]);
+    if (b.tag >= 0 && b.tag < 10) bluemote_send(kRemoteCmds[b.tag]);
 }
 
 @end

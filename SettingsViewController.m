@@ -44,6 +44,8 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4 };
 
 - (UISegmentedControl *)segmentWithItems:(NSArray *)items selected:(NSInteger)sel tag:(int)tag width:(CGFloat)w {
     UISegmentedControl *s = [[[UISegmentedControl alloc] initWithItems:items] autorelease];
+    s.segmentedControlStyle = UISegmentedControlStyleBar;      /* native height is 30 pt, so the end caps are not stretched */
+    s.tintColor = [UIColor colorWithRed:0.21f green:0.27f blue:0.37f alpha:1.0f];   /* same blue-grey as the nav bar */
     s.frame = CGRectMake(0, 0, w, 30);
     s.selectedSegmentIndex = sel;
     s.tag = tag;
@@ -72,7 +74,7 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4 };
     cell.accessoryType = UITableViewCellAccessoryNone;
 
     if (ip.section == SecBluetooth) {                                   /* pairing logic lives in its own cell */
-        int n = btcombo_saved_count();
+        int n = bluemote_saved_count();
         cell.textLabel.text = @"Pairing & Devices";
         cell.detailTextLabel.text = n == 0 ? @"No paired devices"
                                            : [NSString stringWithFormat:@"%d paired device%@", n, n == 1 ? @"" : @"s"];

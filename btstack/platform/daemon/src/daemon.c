@@ -976,7 +976,7 @@ static int btstack_command_handler(connection_t *connection, uint8_t *packet, ui
             reverse_bd_addr(&packet[3], addr);
             psm = little_endian_read_16(packet, 9);
             mtu = little_endian_read_16(packet, 11);
-            // BTCombo fix: v1.2 passed NULL here; l2cap.c calls the channel's packet handler unconditionally -> SIGSEGV
+            // Bluemote fix: v1.2 passed NULL here; l2cap.c calls the channel's packet handler unconditionally -> SIGSEGV
             // as soon as an outgoing channel opened. Events must go to stack_packet_handler like for incoming channels.
             status = l2cap_create_channel(&stack_packet_handler, addr, psm, mtu, &cid);
             if (status){
@@ -1004,7 +1004,7 @@ static int btstack_command_handler(connection_t *connection, uint8_t *packet, ui
         case L2CAP_REGISTER_SERVICE:
             psm = little_endian_read_16(packet, 3);
             mtu = little_endian_read_16(packet, 5);
-            // BTCombo fix: NULL service handler -> l2cap.c calls a NULL pointer when an incoming channel opens (SIGSEGV)
+            // Bluemote fix: NULL service handler -> l2cap.c calls a NULL pointer when an incoming channel opens (SIGSEGV)
             status = l2cap_register_service(&stack_packet_handler, psm, mtu, LEVEL_0);
             daemon_add_client_l2cap_service(connection, little_endian_read_16(packet, 3));
             l2cap_emit_service_registered(connection, status, psm);
@@ -1016,7 +1016,7 @@ static int btstack_command_handler(connection_t *connection, uint8_t *packet, ui
             break;
         case L2CAP_ACCEPT_CONNECTION:
             cid    = little_endian_read_16(packet, 3);
-            // BTCombo fix: remember which client owns this incoming channel, so channel-opened / data / closed events reach it
+            // Bluemote fix: remember which client owns this incoming channel, so channel-opened / data / closed events reach it
             daemon_add_client_l2cap_channel(connection, cid);
             l2cap_accept_connection(cid);
             break;
@@ -1524,10 +1524,10 @@ static void daemon_packet_handler(void * connection, uint8_t packet_type, uint16
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) break;
                     if (tlv_setup_done) break;
 
-                    // BTCombo patch: the app owns the link keys (it answers HCI_EVENT_LINK_KEY_REQUEST itself),
+                    // Bluemote patch: the app owns the link keys (it answers HCI_EVENT_LINK_KEY_REQUEST itself),
                     // so the TLV store, the TLV link key db and the BLE device db are not set up here.
-                    // Define BTCOMBO_USE_TLV to get the original v1.2 behaviour back.
-#ifdef BTCOMBO_USE_TLV
+                    // Define BLUEMOTE_USE_TLV to get the original v1.2 behaviour back.
+#ifdef BLUEMOTE_USE_TLV
                     // setup TLV using local address as part of the name
                     gap_local_bd_addr(addr);
                     log_info("BTstack up and running at %s",  bd_addr_to_str(addr));
@@ -2031,7 +2031,7 @@ int btstack_server_run(int tcp_flag){
 
     socket_connection_init();
 
-    // BTCombo patch: v1.2 declared a second, local 'control' here that shadowed the file-scope one used by
+    // Bluemote patch: v1.2 declared a second, local 'control' here that shadowed the file-scope one used by
     // btstack_server_configure_stack(), so hci_set_control() was never called on iOS (iphone_on() never ran).
     const btstack_uart_block_t * uart_block_implementation = NULL;
     (void) uart_block_implementation;
@@ -2074,7 +2074,7 @@ int btstack_server_run(int tcp_flag){
     platform_iphone_register_preferences_changed(preferences_changed_callback);
 #endif
 
-    printf("BTCombo daemon: control=%s, launchd=%s\n", control ? "btstack_control_iphone" : "NONE (bug!)",
+    printf("Bluemote daemon: control=%s, launchd=%s\n", control ? "btstack_control_iphone" : "NONE (bug!)",
 #ifdef USE_LAUNCHD
            "yes"
 #else
@@ -2104,10 +2104,10 @@ int btstack_server_run(int tcp_flag){
     // iPhone has toggle in Preferences.app
     newLoggingEnabled = platform_iphone_logging_enabled();
 #endif
-#ifdef BTCOMBO_FORCE_LOGGING
-    // BTCombo: logging every HCI packet to /var/log/BTcombo.log costs real time (a trackpad sends ~60 packets/s),
-    // so it is OFF by default. Create the file /var/mobile/btcombo-debug and reload the launchd job to turn it on.
-    newLoggingEnabled = (access("/var/mobile/btcombo-debug", F_OK) == 0);
+#ifdef BLUEMOTE_FORCE_LOGGING
+    // Bluemote: logging every HCI packet to /var/log/Bluemote.log costs real time (a trackpad sends ~60 packets/s),
+    // so it is OFF by default. Create the file /var/mobile/bluemote-debug and reload the launchd job to turn it on.
+    newLoggingEnabled = (access("/var/mobile/bluemote-debug", F_OK) == 0);
 #endif
     daemon_set_logging_enabled(newLoggingEnabled);
     

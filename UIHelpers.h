@@ -1,6 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
-#include "btcombo_core.h"
+#include "bluemote_core.h"
 
 /* ---- iOS 6 "skeuomorphic" skin: glossy buttons and brushed-metal panels, all drawn with Core Graphics ---- */
 
@@ -36,6 +36,7 @@ NSString *BTStatusText(BOOL *connected);                                        
 #define kPrefReelsSwap      @"reelsSwap"
 #define kPrefNaturalScroll  @"naturalScroll"
 #define kPrefBaseMode       @"baseMode"          /* 0 = trackpad, 1 = media */
+#define kPrefMediaExpanded  @"mediaPadExpanded"  /* 1 = Media trackpad expanded (remote collapsed to Back / Home / Menu) */
 
 int BTActiveCount(NSSet *all);
 CGPoint BTCentroid(NSSet *all, UIView *v);

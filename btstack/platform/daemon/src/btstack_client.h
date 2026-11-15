@@ -70,7 +70,7 @@ extern "C" {
 
 // UNIX domain socket for BTstack */
 #ifndef BTSTACK_UNIX
-#define BTSTACK_UNIX            "/tmp/BTcombo"
+#define BTSTACK_UNIX            "/tmp/Bluemote"
 #endif
 
 // optional: if called before bt_open, TCP socket is used instead of local unix socket
