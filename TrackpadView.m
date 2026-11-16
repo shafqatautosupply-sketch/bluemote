@@ -240,7 +240,7 @@
     CGFloat kgap = 8.0f;
     CGFloat bw = (box.size.width - 2 * kpad - 3 * kgap) / 4.0f;
     CGFloat y = box.origin.y + kpad;
-    UIView *keys[4] = { leftB, rightB, backB, homeB };
+    UIView *keys[4] = { backB, leftB, rightB, homeB };              /* Back far left, the two click keys in the centre */
     for (int i = 0; i < 4; i++) {
         keys[i].frame = CGRectMake(box.origin.x + kpad + i * (bw + kgap), y, bw, bh);
     }

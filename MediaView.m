@@ -1,10 +1,11 @@
 #import "MediaView.h"
 #import "UIHelpers.h"
+#import <QuartzCore/QuartzCore.h>
 #include <math.h>
 
 /* ======================================================================== remote glyphs */
 
-enum { GBack, GHome, GMenu, GMute, GPrev, GNext, GRew, GFfwd, GPlay, GStop, GReels };
+enum { GBack, GHome, GMenu, GMute, GPrev, GNext, GRew, GFfwd, GPlay, GStop, GMin, GMax, GPadDpad, GPadTrack };
 
 static void RTri(CGContextRef c, CGFloat cx, CGFloat cy, CGFloat s, BOOL right) {
     CGContextBeginPath(c);
@@ -90,6 +91,48 @@ static void RemoteGlyph(CGContextRef c, int g, CGRect r) {
         case GStop:
             CGContextFillRect(c, CGRectMake(mx - s, my - s, 2.0f * s, 2.0f * s));
             break;
+        case GMin:                                       /* minimize: a bold bar low in the key, like a window's minimize */
+            CGContextSetLineWidth(c, 3.2f);
+            CGContextBeginPath(c);
+            CGContextMoveToPoint(c, mx - 1.3f * s, my + 0.75f * s);
+            CGContextAddLineToPoint(c, mx + 1.3f * s, my + 0.75f * s);
+            CGContextStrokePath(c);
+            break;
+        case GMax:                                       /* maximize: a square outline */
+            CGContextSetLineWidth(c, 2.6f);
+            CGContextStrokeRect(c, CGRectMake(mx - 1.15f * s, my - 1.15f * s, 2.3f * s, 2.3f * s));
+            break;
+        case GPadDpad: {                                 /* D-pad logo: a ring with four arrows and a centre button */
+            CGFloat R = 1.55f * s;
+            CGContextSetLineWidth(c, 2.0f);
+            CGContextStrokeEllipseInRect(c, CGRectMake(mx - R, my - R, 2 * R, 2 * R));
+            CGContextStrokeEllipseInRect(c, CGRectMake(mx - 0.42f * s, my - 0.42f * s, 0.84f * s, 0.84f * s));
+            static const float dxs[4] = { 0, 0, -1, 1 }, dys[4] = { -1, 1, 0, 0 };
+            for (int k = 0; k < 4; k++) {
+                CGFloat dx = dxs[k], dy = dys[k];                    /* unit direction; (-dy, dx) is the sideways unit */
+                CGFloat px = mx + dx * 1.02f * s, py = my + dy * 1.02f * s;
+                CGContextBeginPath(c);
+                CGContextMoveToPoint(c, px + dx * 0.34f * s, py + dy * 0.34f * s);
+                CGContextAddLineToPoint(c, px - dx * 0.22f * s - dy * 0.40f * s, py - dy * 0.22f * s + dx * 0.40f * s);
+                CGContextAddLineToPoint(c, px - dx * 0.22f * s + dy * 0.40f * s, py - dy * 0.22f * s - dx * 0.40f * s);
+                CGContextClosePath(c);
+                CGContextFillPath(c);
+            }
+            break;
+        }
+        case GPadTrack: {                                /* trackpad logo: a rounded pad with the click bar along its bottom */
+            CGRect pr = CGRectMake(mx - 1.45f * s, my - 1.15f * s, 2.9f * s, 2.3f * s);
+            CGContextSetLineWidth(c, 2.0f);
+            UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:pr cornerRadius:0.55f * s];
+            [p stroke];
+            CGContextBeginPath(c);
+            CGContextMoveToPoint(c, pr.origin.x, CGRectGetMaxY(pr) - 0.7f * s);
+            CGContextAddLineToPoint(c, CGRectGetMaxX(pr), CGRectGetMaxY(pr) - 0.7f * s);
+            CGContextMoveToPoint(c, mx, CGRectGetMaxY(pr) - 0.7f * s);
+            CGContextAddLineToPoint(c, mx, CGRectGetMaxY(pr));
+            CGContextStrokePath(c);
+            break;
+        }
         default: break;
     }
 }
@@ -137,14 +180,10 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 @end
 
 /* The single aluminium block behind everything on the page. Its frame is always the whole page and the metal is always
-   inset 4 pt, in both styles, so switching styles never changes its size or position.
-   D-pad style: a slab with the etched border near its edge.
-   Pad style (trackpad / Reels): a full-page unibody exactly like the main Trackpad page. Its size never changes, so the
-   brushed finish stays put while the etched sections on top of it grow and shrink. */
-@interface AluminiumBlock : UIView {
-    BOOL unibody;
-}
-- (void)setUnibody:(BOOL)u;
+   inset 4 pt. It is a full-page unibody exactly like the main Trackpad page, for the D-pad and for the gesture pad
+   alike: the pad and the remote are separate sections etched into it. Its size never changes, so the brushed finish
+   stays put while the etched sections on top of it grow and shrink. */
+@interface AluminiumBlock : UIView
 @end
 @implementation AluminiumBlock
 - (id)initWithFrame:(CGRect)f {
@@ -157,11 +196,8 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     }
     return self;
 }
-- (void)setUnibody:(BOOL)u { if (u != unibody) { unibody = u; [self setNeedsDisplay]; } }
 - (void)drawRect:(CGRect)rect {
-    CGRect slab = CGRectInset(self.bounds, 4.0f, 4.0f);     /* same size and position in both styles, so a flip never resizes it */
-    if (unibody) BTDrawUnibody(slab, 14.0f);
-    else         BTDrawPanel(slab, 14.0f);
+    BTDrawUnibody(CGRectInset(self.bounds, 4.0f, 4.0f), 14.0f);
 }
 @end
 
@@ -173,6 +209,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 }
 - (id)initWithGlyph:(int)g;
 - (void)setToggled:(BOOL)t;
+- (void)setGlyph:(int)g;
 @end
 
 @implementation RemoteButton
@@ -183,10 +220,12 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
         glyph = g;
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;      /* Back / Home / Menu change width: redraw, never stretch */
     }
     return self;
 }
 
+- (void)setGlyph:(int)g { glyph = g; [self setNeedsDisplay]; }
 - (void)setToggled:(BOOL)t { toggled = t; [self setNeedsDisplay]; }
 - (void)setHighlighted:(BOOL)h { [super setHighlighted:h]; [self setNeedsDisplay]; }
 
@@ -200,18 +239,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     BTKeyDrawWall(c, cs, wall, toggled);
     BTKeyDrawFace(c, cs, face, down, toggled);
 
-    if (glyph == GReels) {
-        UIFont *f = [UIFont boldSystemFontOfSize:11.0f];
-        CGRect tr = CGRectMake(face.origin.x, CGRectGetMidY(face) - 7.0f, face.size.width, 14.0f);
-        if (toggled) { [[UIColor colorWithWhite:0.0f alpha:0.55f] set]; }
-        else         { [[UIColor colorWithWhite:1.0f alpha:0.90f] set]; }
-        [@"Reels" drawInRect:CGRectOffset(tr, 0, 1.0f) withFont:f lineBreakMode:NSLineBreakByClipping alignment:NSTextAlignmentCenter];
-        if (toggled) { [[UIColor whiteColor] set]; }
-        else         { [[UIColor colorWithWhite:0.28f alpha:1.0f] set]; }
-        [@"Reels" drawInRect:tr withFont:f lineBreakMode:NSLineBreakByClipping alignment:NSTextAlignmentCenter];
-    } else {
-        RemoteDrawGlyphEngraved(c, glyph, face, !toggled);
-    }
+    RemoteDrawGlyphEngraved(c, glyph, face, !toggled);
     CGColorSpaceRelease(cs);
 }
 
@@ -519,7 +547,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
 @end
 
-/* ======================================================================== gesture pad (trackpad style / Reels) */
+/* ======================================================================== gesture pad (trackpad style) */
 
 @interface MediaPanel : UIView {
     BOOL gestureActive, moved, longFired, volFired;
@@ -527,12 +555,8 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     CGPoint startC, lastC;
     float accX, accY, volAcc;
     NSTimeInterval startTime;
-    /* reels mode */
-    BOOL reelsOn, reelsSwap, pendingTap;
-    int reelsMethod;
-    BOOL showHelp;           /* 0 = arrow keys, 1 = mouse wheel, 2 = mouse drag */
+    BOOL showHelp;
 }
-- (void)setReels:(BOOL)on method:(int)method swap:(BOOL)swap;
 - (void)setShowHelp:(BOOL)show;
 @end
 
@@ -549,17 +573,6 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     return self;
 }
 
-- (void)setReels:(BOOL)on method:(int)method swap:(BOOL)swap {
-    if (pendingTap) {
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(reelsSingle) object:nil];
-        pendingTap = NO;
-    }
-    reelsOn = on;
-    reelsMethod = method;
-    reelsSwap = swap;
-    [self setNeedsDisplay];
-}
-
 - (void)setShowHelp:(BOOL)show {
     showHelp = show;
     [self setNeedsDisplay];
@@ -567,35 +580,8 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
 - (void)drawRect:(CGRect)rect {
     if (showHelp) {                                  /* the aluminium and the etched pad are behind this view */
-        BTDrawHelpCard(self.bounds, reelsOn
-            ? @"Reels / Shorts\nTap: next video\nDouble-tap: previous video\nHold: Back\nTwo-finger drag up / down: volume\nTwo-finger tap: play / pause"
-            : @"Swipe: arrow keys (keep dragging to repeat)\nTap: OK   Hold: Back\nTwo-finger tap: play / pause\nTwo-finger drag up / down: volume\nTwo-finger swipe left / right: previous / next\nTwo-finger hold: Home   Three-finger tap: mute");
-    }
-}
-
-/* "down" = swipe down = go to the next video, "up" = previous video */
-- (void)reelsGo:(BOOL)down {
-    if (reelsSwap) down = !down;
-    switch (reelsMethod) {
-        case 0:  bluemote_send(down ? "KEY 0x51" : "KEY 0x52"); break;     /* Down / Up arrow */
-        case 1:  bluemote_send(down ? "W -4" : "W 4"); break;              /* mouse wheel */
-        default: bluemote_send(down ? "SWIPE 0 -450" : "SWIPE 0 450"); break; /* finger-drag swipe */
-    }
-}
-
-- (void)reelsSingle {
-    pendingTap = NO;
-    [self reelsGo:YES];
-}
-
-- (void)reelsTap {
-    if (pendingTap) {                       /* second tap in time: double tap */
-        pendingTap = NO;
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(reelsSingle) object:nil];
-        [self reelsGo:NO];
-    } else {                                /* wait to see if a second tap follows */
-        pendingTap = YES;
-        [self performSelector:@selector(reelsSingle) withObject:nil afterDelay:0.35];
+        BTDrawHelpCard(self.bounds,
+            @"Swipe: arrow keys (keep dragging to repeat)\nTap: OK   Hold: Back\nTwo-finger tap: play / pause\nTwo-finger drag up / down: volume\nTwo-finger swipe left / right: previous / next\nTwo-finger hold: Home   Three-finger tap: mute");
     }
 }
 
@@ -645,7 +631,6 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     if (!moved) return;
 
     if (n == 1 && maxTouches == 1) {
-        if (reelsOn) return;                /* reels mode: single finger only taps, no accidental swipes */
         const float STEP = 36.0f;
         accX += dx;
         accY += dy;
@@ -676,17 +661,13 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     float tdy = lastC.y - startC.y;
     if (!moved && dur < 0.35) {
         if (maxTouches == 1) {
-            if (reelsOn) {
-                [self reelsTap];
-            } else {
-                BTSendOK(0);                          /* OK (Select) */
-            }
+            BTSendOK(0);                              /* OK (Select) */
         } else if (maxTouches == 2) {
             bluemote_send("MEDIA playpause");
         } else if (maxTouches >= 3) {
             bluemote_send("MEDIA mute");
         }
-    } else if (maxTouches == 2 && !volFired && !reelsOn && fabsf(tdx) > 60.0f && fabsf(tdx) > 2.0f * fabsf(tdy)) {
+    } else if (maxTouches == 2 && !volFired && fabsf(tdx) > 60.0f && fabsf(tdx) > 2.0f * fabsf(tdy)) {
         bluemote_send(tdx > 0 ? "MEDIA next" : "MEDIA prev");
     }
 }
@@ -711,12 +692,21 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
 /* ======================================================================== page container */
 
-/* tags 0-9: commands, 10: Reels toggle */
+/* tags 0-9: commands, 10: D-pad / trackpad switch, 11: minimize / maximize */
 static const char *kRemoteCmds[10] = {
     "MEDIA back", "MEDIA home", "MEDIA menu", "MEDIA mute",
     "MEDIA prev", "MEDIA playpause", "MEDIA next",
     "MEDIA rewind", "MEDIA stop", "MEDIA ffwd"
 };
+
+@interface MediaView ()
+- (void)applyExtrasAlpha;
+- (void)stopAnimation;
+- (void)animateCollapseTo:(CGFloat)target;
+- (void)toggleSize;
+@end
+
+static BOOL expandedAtLaunch(void) { return [[NSUserDefaults standardUserDefaults] boolForKey:kPrefMediaExpanded]; }
 
 @implementation MediaView
 
@@ -756,9 +746,6 @@ static const char *kRemoteCmds[10] = {
         [infoB addTarget:self action:@selector(infoTapped) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:infoB];
 
-        expandB = BTMakeKeyButton([NSString stringWithUTF8String:"\xE2\x96\xBC"], self, @selector(toggleExpand));   /* down arrow = grow the pad */
-        [self addSubview:expandB];
-
         remoteBody = [[RemoteBody alloc] initWithFrame:CGRectZero];
         [self addSubview:remoteBody];
         [remoteBody release];
@@ -778,95 +765,104 @@ static const char *kRemoteCmds[10] = {
         [centerButtons addObject:[self addRemote:GPlay tag:5]];
         [centerButtons addObject:[self addRemote:GNext tag:6]];
         [centerButtons addObject:[self addRemote:GRew  tag:7]];
-        [centerButtons addObject:[self addRemote:GStop tag:8]];
+        [centerButtons addObject:[self addRemote:GMute tag:3]];                /* Mute sits where Stop was */
         [centerButtons addObject:[self addRemote:GFfwd tag:9]];
-        muteB  = [self addRemote:GMute  tag:3];
-        reelsB = [self addRemote:GReels tag:10];
+        padB   = [self addRemote:GPadDpad tag:10];                              /* D-pad / trackpad switch */
+        sizeB  = [self addRemote:(expandedAtLaunch() ? GMax : GMin) tag:11];    /* minimize / maximize, where Mute was */
 
         expanded = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefMediaExpanded];   /* remember the last position */
+        collapseT = expanded ? 1.0f : 0.0f;
         [self reloadSettings];
     }
     return self;
 }
 
 - (void)dealloc {
+    [animLink invalidate];
+    animLink = nil;
     [centerButtons release];
     [super dealloc];
 }
 
+static CGFloat BTLerp(CGFloat a, CGFloat b, CGFloat t) { return a + (b - a) * t; }
+
+/* One layout for both pads. `collapseT` runs from 0 (full remote) to 1 (minimized: a single row of Back / Home / Menu
+   next to the minimize / maximize key). While it animates, this runs once per display frame, so every key is redrawn at
+   its true size instead of a bitmap being stretched. */
 - (void)layoutSubviews {
     CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
-    CGFloat bs = 44.0f, gap = 8.0f;
-    BOOL collapsed = (expanded && gesturePad);                            /* expanded: only the Back / Home / Menu row is left */
-    CGRect box, remote;
-    CGFloat pad;                                                          /* space between the remote's edge and its buttons */
-    if (gesturePad) {
-        /* Pad style (trackpad / Reels): one unibody for the whole page, like the main Trackpad page. The pad and the
-           remote are separate sections etched into it. The block itself never changes size, so expanding / collapsing
-           only moves the etched borders and the brushed finish stays exactly as it is. */
-        const CGFloat margin = 4.0f, etch = 8.0f, section = 8.0f;
-        pad = 8.0f;
-        chassis.frame = self.bounds;
-        CGRect inner = CGRectInset(CGRectMake(margin, margin, w - 2 * margin, h - 2 * margin), etch, etch);
-        CGFloat remoteH = collapsed ? (bs + 2 * pad) : (3 * bs + 2 * gap + 2 * pad);
-        remote = CGRectMake(inner.origin.x, CGRectGetMaxY(inner) - remoteH, inner.size.width, remoteH);
-        box = CGRectMake(inner.origin.x, inner.origin.y, inner.size.width, remote.origin.y - section - inner.origin.y);
-        padBox.frame = box;
-        remoteBox.frame = remote;
-    } else {
-        /* D-pad style: pad and remote share one aluminium block */
-        const CGFloat m = 8.0f;
-        pad = 16.0f;
-        CGFloat remoteH = 3 * bs + 2 * gap + 2 * pad;
-        remote = CGRectMake(m, h - remoteH - m, w - 2 * m, remoteH);
-        chassis.frame = self.bounds;                                      /* identical to the pad style: no size change on the flip */
-        box = CGRectMake(m, m, w - 2 * m, remote.origin.y - m);
-    }
+    CGFloat bs = 44.0f, gap = 8.0f, pad = 8.0f;
+    CGFloat t = collapseT;
+    const CGFloat margin = 4.0f, etch = 8.0f, section = 8.0f;
+
+    chassis.frame = self.bounds;
+    CGRect inner = CGRectInset(CGRectMake(margin, margin, w - 2 * margin, h - 2 * margin), etch, etch);
+    CGFloat fullH = 3 * bs + 2 * gap + 2 * pad, oneH = bs + 2 * pad;
+    CGFloat remoteH = BTLerp(fullH, oneH, t);
+    CGRect remote = CGRectMake(inner.origin.x, CGRectGetMaxY(inner) - remoteH, inner.size.width, remoteH);
+    CGRect box = CGRectMake(inner.origin.x, inner.origin.y, inner.size.width, remote.origin.y - section - inner.origin.y);
+    padBox.frame = box;
+    remoteBox.frame = remote;
+
     panel.frame = box;
-    dpad.frame = box;
+    /* The ring keeps the size it has with the full remote and stays centred in the pad section as it grows, so it is
+       never redrawn or rescaled while the section moves. */
+    CGFloat fullBoxH = MAX(inner.size.height - fullH - section, 40.0f);
+    dpad.bounds = CGRectMake(0, 0, box.size.width, fullBoxH);
+    dpad.center = CGPointMake(CGRectGetMidX(box), CGRectGetMidY(box));
     infoB.frame = CGRectMake(box.origin.x + 6.0f, box.origin.y + 6.0f, 30.0f, 30.0f);
-    expandB.frame = CGRectMake(CGRectGetMaxX(box) - 6.0f - 34.0f, box.origin.y + 8.0f, 34.0f, 28.0f);   /* top-right, mirrors the "i" */
 
     remoteBody.frame = remote;
     CGFloat rw = remote.size.width;
     CGFloat gridW = 3 * bs + 2 * gap, gx = (rw - gridW) / 2.0f;
-    volR.frame = CGRectMake(pad, pad, bs, 2 * bs + gap);                  /* rockers span the top two rows, Mute / Reels sit in the third */
-    chR.frame  = CGRectMake(rw - pad - bs, pad, bs, 2 * bs + gap);
-    muteB.frame  = CGRectMake(pad, pad + 2 * (bs + gap), bs, bs);
-    reelsB.frame = CGRectMake(rw - pad - bs, pad + 2 * (bs + gap), bs, bs);
+    CGFloat dy = remoteH - fullH;                                          /* keeps the other keys where they were while the block shrinks around them */
+    CGFloat sw = MIN(64.0f, MAX(bs, gx - pad - gap));                      /* the side column (VOL / CH rockers and the two keys under them) takes all the room beside the centre keys */
+
+    volR.frame = CGRectMake(pad, pad + dy, sw, 2 * bs + gap);              /* rockers span the top two rows, Minimize / the pad switch sit in the third */
+    chR.frame  = CGRectMake(rw - pad - sw, pad + dy, sw, 2 * bs + gap);
+    sizeB.frame  = CGRectMake(pad, pad + 2 * (bs + gap) + dy, sw, bs);     /* same spot in both states: the bottom-left corner */
+    padB.frame = CGRectMake(rw - pad - sw, pad + 2 * (bs + gap) + dy, sw, bs);
+
+    /* Minimized: Back / Home / Menu share the whole row to the right of the minimize / maximize key */
+    CGFloat rowX = pad + sw + gap;
+    CGFloat wb = (rw - pad - rowX - 2 * gap) / 3.0f;
     for (int i = 0; i < (int)[centerButtons count]; i++) {
         int row = i / 3, col = i % 3;
-        ((UIView *)[centerButtons objectAtIndex:i]).frame = CGRectMake(gx + col * (bs + gap), pad + row * (bs + gap), bs, bs);
+        CGRect f;
+        if (i < 3) {
+            f = CGRectMake(BTLerp(gx + col * (bs + gap), rowX + col * (wb + gap), t), pad, BTLerp(bs, wb, t), bs);
+        } else {
+            f = CGRectMake(gx + col * (bs + gap), pad + row * (bs + gap) + dy, bs, bs);
+        }
+        ((UIView *)[centerButtons objectAtIndex:i]).frame = f;
     }
+    [self applyExtrasAlpha];
 }
 
-/* pad type and Reels options come from Settings; Reels itself is toggled here */
+/* pad type is switched here (and in Settings) */
 - (void)reloadSettings {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     int padMode = (int)[d integerForKey:kPrefMediaPadMode];            /* 0 = D-pad (default), 1 = trackpad */
-    reelsOn = [d boolForKey:kPrefReelsOn];
     infoB.hidden = !BTInfoButtonEnabled();                              /* "i" button can be turned off in Settings */
     if (infoB.hidden) helpOn = NO;
-    [panel setReels:reelsOn method:(int)[d integerForKey:kPrefReelsMethod] swap:[d boolForKey:kPrefReelsSwap]];
-    BOOL useDpad = (padMode == 0 && !reelsOn);                          /* Reels shows a plain pad, like the trackpad */
+    BOOL useDpad = (padMode == 0);
     dpad.hidden = !useDpad;
     panel.hidden = useDpad;
-    [(AluminiumBlock *)chassis setUnibody:!useDpad];                    /* pad style: unibody with etched sections; D-pad: slab */
-    padBox.hidden = useDpad;
-    remoteBox.hidden = useDpad;
-    expandB.hidden = useDpad;                                           /* expand is only for the trackpad-style pad */
-    gesturePad = !useDpad;                                              /* the D-pad always shows the full remote; the saved choice is kept */
+    [self stopAnimation];                                               /* settle on the saved choice */
+    collapseT = expanded ? 1.0f : 0.0f;
+    [sizeB setGlyph:(expanded ? GMax : GMin)];
     [self setNeedsLayout];
-    [self updateExpandedUI];
-    [reelsB setToggled:reelsOn];
+    [padB setGlyph:(useDpad ? GPadTrack : GPadDpad)];                    /* the logo shows the pad the key switches TO */
     [panel setShowHelp:helpOn];
     [dpad setShowHelp:helpOn];
 }
 
-/* everything in the remote block except Back / Home / Menu (the first three centre buttons) */
-- (void)setExtrasAlpha:(CGFloat)a {
+/* everything in the remote block except Back / Home / Menu and the minimize / maximize key fades out when minimized,
+   quickly at the start of the move, and comes back once the block has grown again */
+- (void)applyExtrasAlpha {
+    CGFloat a = 1.0f - MIN(1.0f, collapseT / 0.35f);
     BOOL on = (a > 0.5f);
-    NSMutableArray *extras = [NSMutableArray arrayWithObjects:volR, chR, muteB, reelsB, nil];
+    NSMutableArray *extras = [NSMutableArray arrayWithObjects:volR, chR, padB, nil];
     for (int i = 3; i < (int)[centerButtons count]; i++) [extras addObject:[centerButtons objectAtIndex:i]];
     for (UIView *v in extras) {
         v.alpha = a;
@@ -874,28 +870,45 @@ static const char *kRemoteCmds[10] = {
     }
 }
 
-- (void)updateExpandedUI {
-    BOOL ex = (expanded && gesturePad);
-    [expandB setTitle:[NSString stringWithUTF8String:(ex ? "\xE2\x96\xB2" : "\xE2\x96\xBC")] forState:UIControlStateNormal];
-    [self setExtrasAlpha:(ex ? 0.0f : 1.0f)];
+- (void)stopAnimation {
+    if (animLink) {
+        [animLink invalidate];
+        animLink = nil;
+    }
 }
 
-- (void)toggleExpand {
+- (void)animateCollapseTo:(CGFloat)target {
+    animFrom = collapseT;
+    animTo = target;
+    animDur = MAX(0.15, 0.38 * fabs((double)(target - collapseT)));
+    animStart = CACurrentMediaTime();
+    if (animLink == nil) {
+        animLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(animTick:)];
+        [animLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    }
+}
+
+- (void)animTick:(CADisplayLink *)link {
+    CGFloat p = (CGFloat)((CACurrentMediaTime() - animStart) / animDur);
+    if (p > 1.0f) p = 1.0f;
+    CGFloat e = p * p * (3.0f - 2.0f * p);                              /* ease in and out */
+    collapseT = animFrom + (animTo - animFrom) * e;
+    [self setNeedsLayout];
+    [self layoutIfNeeded];
+    if (p >= 1.0f) {
+        [self stopAnimation];
+        collapseT = animTo;
+        [self setNeedsLayout];
+        [panel setShowHelp:helpOn];                                     /* the help card is drawn, so it waits until the move is done */
+    }
+}
+
+- (void)toggleSize {
     expanded = !expanded;
     [[NSUserDefaults standardUserDefaults] setBool:expanded forKey:kPrefMediaExpanded];   /* remembered for next time */
-    [expandB setTitle:[NSString stringWithUTF8String:(expanded ? "\xE2\x96\xB2" : "\xE2\x96\xBC")] forState:UIControlStateNormal];
-    UIViewAnimationOptions o = UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState |
-                               UIViewAnimationOptionAllowUserInteraction;
-    /* The aluminium block is not touched: only the etched borders (live layers, not bitmaps) and the pad move, so the
-       brushed finish cannot change or shimmer. The help card is drawn, not a layer, so it waits until the move is done. */
+    [sizeB setGlyph:(expanded ? GMax : GMin)];
     [panel setShowHelp:NO];
-    [UIView animateWithDuration:0.38 delay:0.0 options:o
-        animations:^{ [self setNeedsLayout]; [self layoutIfNeeded]; }
-        completion:^(BOOL finished) { [panel setShowHelp:helpOn]; }];
-    /* the extra buttons fade out quickly when collapsing, and come back after the block has grown again */
-    [UIView animateWithDuration:0.18 delay:(expanded ? 0.0 : 0.20) options:o
-        animations:^{ [self setExtrasAlpha:(expanded ? 0.0f : 1.0f)]; }
-        completion:nil];
+    [self animateCollapseTo:(expanded ? 1.0f : 0.0f)];
 }
 
 - (void)infoTapped {
@@ -904,11 +917,13 @@ static const char *kRemoteCmds[10] = {
     [dpad setShowHelp:helpOn];
 }
 
-/* Reels on / off flips the page the same way Trackpad <-> Media does (right when turning on, back left when off). */
-- (void)flipReels {
-    BOOL on = !reelsOn;
-    [[NSUserDefaults standardUserDefaults] setBool:on forKey:kPrefReelsOn];
-    UIViewAnimationOptions o = on ? UIViewAnimationOptionTransitionFlipFromRight : UIViewAnimationOptionTransitionFlipFromLeft;
+/* D-pad <-> trackpad flips the page the same way Trackpad <-> Media does (right when going to the trackpad, back left
+   when going to the D-pad). */
+- (void)flipPad {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    BOOL toTrackpad = ([d integerForKey:kPrefMediaPadMode] == 0);
+    [d setInteger:(toTrackpad ? 1 : 0) forKey:kPrefMediaPadMode];
+    UIViewAnimationOptions o = toTrackpad ? UIViewAnimationOptionTransitionFlipFromRight : UIViewAnimationOptionTransitionFlipFromLeft;
     [UIView transitionWithView:self duration:0.55 options:o
         animations:^{
             /* Everything is moved to its final place with animations OFF. Inside a transition the key frames would
@@ -923,11 +938,12 @@ static const char *kRemoteCmds[10] = {
 }
 
 - (void)remoteTapped:(UIControl *)b {
+    if (b.tag == 11) { [self toggleSize]; return; }
     if (b.tag == 10) {
         /* Start the flip on the next run loop pass: by then the tapped key has let go of its pressed look, so the flip
            never starts from (or lands on) a half-pressed key. */
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flipReels) object:nil];
-        [self performSelector:@selector(flipReels) withObject:nil afterDelay:0.0];
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(flipPad) object:nil];
+        [self performSelector:@selector(flipPad) withObject:nil afterDelay:0.0];
         return;
     }
     if (b.tag >= 0 && b.tag < 10) bluemote_send(kRemoteCmds[b.tag]);

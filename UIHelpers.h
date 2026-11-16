@@ -62,9 +62,6 @@ void BTSendOK(int phase);                                                       
 #define BTShowKeyboardNotification @"BTShowKeyboardNotification"
 #define BTPasteStateNotification   @"BTPasteStateNotification"
 #define kPrefMediaPadMode   @"mediaPadMode"      /* 0 = D-pad, 1 = trackpad */
-#define kPrefReelsOn        @"reelsOn"
-#define kPrefReelsMethod    @"reelsMethod"       /* 0 = keys, 1 = wheel, 2 = drag */
-#define kPrefReelsSwap      @"reelsSwap"
 #define kPrefNaturalScroll  @"naturalScroll"
 #define kPrefBaseMode       @"baseMode"          /* 0 = trackpad, 1 = media */
 #define kPrefMediaExpanded  @"mediaPadExpanded"  /* 1 = Media trackpad expanded (remote collapsed to Back / Home / Menu) */

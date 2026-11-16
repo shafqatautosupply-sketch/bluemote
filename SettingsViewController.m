@@ -3,7 +3,7 @@
 #import "UIHelpers.h"
 
 enum { SecBluetooth = 0, SecMedia = 1, SecTrackpad = 2, SecInterface = 3 };
-enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
+enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
 
 @implementation SettingsViewController
 
@@ -26,7 +26,7 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)section {
     if (section == SecBluetooth) return 1;
-    if (section == SecMedia) return 4;
+    if (section == SecMedia) return 2;
     return 1;
 }
 
@@ -39,7 +39,7 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)section {
     if (section == SecMedia)
-        return @"OK button: Select works like a real TV remote (picks the highlighted keyboard suggestion); use Enter only if your TV ignores Select. Reels turns the media pad into a plain pad: tap = next video, double-tap = previous. If it goes the wrong way swap the direction; if nothing happens try another method.";
+        return @"OK button: Select works like a real TV remote (picks the highlighted keyboard suggestion); use Enter only if your TV ignores Select.";
     return nil;
 }
 
@@ -90,13 +90,6 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
             cell.textLabel.text = @"OK button";
             cell.accessoryView = [self segmentWithItems:[NSArray arrayWithObjects:@"Select", @"Enter", nil]
                                                selected:[d integerForKey:kPrefOkMode] tag:TagOkMode width:170];
-        } else if (ip.row == 2) {
-            cell.textLabel.text = @"Reels method";
-            cell.accessoryView = [self segmentWithItems:[NSArray arrayWithObjects:@"Keys", @"Wheel", @"Drag", nil]
-                                               selected:[d integerForKey:kPrefReelsMethod] tag:TagReelsMethod width:170];
-        } else {
-            cell.textLabel.text = @"Swap Reels direction";
-            cell.accessoryView = [self switchOn:[d boolForKey:kPrefReelsSwap] tag:TagReelsSwap];
         }
     } else if (ip.section == SecInterface) {
         cell.textLabel.text = @"Show info (i) button";
@@ -121,14 +114,12 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
 - (void)segmentChanged:(UISegmentedControl *)s {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     if (s.tag == TagPadMode) [d setInteger:s.selectedSegmentIndex forKey:kPrefMediaPadMode];
-    else if (s.tag == TagReelsMethod) [d setInteger:s.selectedSegmentIndex forKey:kPrefReelsMethod];
     else if (s.tag == TagOkMode) [d setInteger:s.selectedSegmentIndex forKey:kPrefOkMode];
 }
 
 - (void)switchChanged:(UISwitch *)sw {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    if (sw.tag == TagReelsSwap) [d setBool:sw.on forKey:kPrefReelsSwap];
-    else if (sw.tag == TagNatural) [d setBool:sw.on forKey:kPrefNaturalScroll];
+    if (sw.tag == TagNatural) [d setBool:sw.on forKey:kPrefNaturalScroll];
     else if (sw.tag == TagShowInfo) [d setBool:sw.on forKey:kPrefShowInfo];
 }
 

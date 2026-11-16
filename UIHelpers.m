@@ -349,7 +349,8 @@ static UIView *BTLineView(CGRect f, CGFloat radius, UIColor *c) {
 /* ---- machined aluminium key: a dark side wall (the block's thickness) with the smooth top face sitting on it.
    Shared by the round-cornered square keys and the VOL / CH rockers. `sink` lowers the face onto the wall when pressed. ---- */
 void BTKeyFrames(CGRect bounds, CGRect *wall, CGRect *face, BOOL down) {
-    CGRect top = CGRectMake(2.0f, 1.0f, bounds.size.width - 4.0f, bounds.size.height - 2.0f - BT_KEY_DEPTH);
+    /* a little room is left round the face (3 pt at the sides, 4 pt below) so the soft shadow is not cut off at the key's frame */
+    CGRect top = CGRectMake(3.0f, 1.0f, bounds.size.width - 6.0f, bounds.size.height - 4.0f - BT_KEY_DEPTH);
     *wall = CGRectOffset(top, 0, BT_KEY_DEPTH);
     *face = CGRectOffset(top, 0, down ? BT_KEY_DEPTH - 1.0f : 0.0f);
 }
@@ -361,23 +362,16 @@ CGFloat BTKeyRadius(CGRect r) {
 }
 
 void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue) {
-    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:wall cornerRadius:BTKeyRadius(wall)];
-    CGContextSaveGState(c);                                            /* contact shadow on the slab */
-    CGContextSetShadowWithColor(c, CGSizeMake(0, 0.6f), 1.5f, [UIColor colorWithWhite:0.0f alpha:0.42f].CGColor);
-    [[UIColor colorWithWhite:0.40f alpha:1.0f] setFill];
+    /* No dark wall under the key, only a subtle soft shadow so the face lifts off the metal. The shape is filled at the
+       face's resting position (the face is drawn over it, so only the shadow shows); the blur is kept small so it stays
+       inside the key's own frame. */
+    CGRect rest = CGRectOffset(wall, 0, -BT_KEY_DEPTH);
+    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(rest, 0.5f, 0.5f) cornerRadius:BTKeyRadius(rest)];
+    CGContextSaveGState(c);
+    CGContextSetShadowWithColor(c, CGSizeMake(0, 2.0f), 4.0f, [UIColor colorWithWhite:0.0f alpha:0.58f].CGColor);
+    [[UIColor colorWithWhite:(blue ? 0.10f : 0.55f) alpha:1.0f] setFill];
     [p fill];
     CGContextRestoreGState(c);
-    CGContextSaveGState(c);
-    [p addClip];
-    CGFloat grey[8] = { 0.60f, 0.61f, 0.65f, 1.0f, 0.34f, 0.35f, 0.39f, 1.0f };
-    CGFloat blu[8]  = { 0.20f, 0.38f, 0.68f, 1.0f, 0.07f, 0.17f, 0.38f, 1.0f };
-    CGGradientRef g = CGGradientCreateWithColorComponents(cs, blue ? blu : grey, NULL, 2);
-    CGContextDrawLinearGradient(c, g, CGPointMake(0, wall.origin.y), CGPointMake(0, CGRectGetMaxY(wall)), 0);
-    CGGradientRelease(g);
-    CGContextRestoreGState(c);
-    [[UIColor colorWithWhite:0.18f alpha:1.0f] setStroke];
-    [p setLineWidth:1.0f];
-    [p stroke];
 }
 
 /* smooth face, same metal as the D-pad ring; a pressed key is dished (dark on top, light below) like the OK button.
@@ -430,7 +424,10 @@ void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, B
 
 /* the face is 1.5 pt above the middle of the frame (wall below it) and dips 2 pt when pressed: keep the label on it */
 - (void)applyInsets {
-    UIEdgeInsets in = self.highlighted ? UIEdgeInsetsMake(0, 0, -(BT_KEY_DEPTH - 2.0f), 0) : UIEdgeInsetsMake(0, 0, BT_KEY_DEPTH, 0);
+    /* the face is 2 + BT_KEY_DEPTH pt above the middle of the frame (it sits 1 pt from the top with 4 pt + depth free
+       below it) and dips (depth - 1) pt when pressed: the label insets keep it centred on the face either way */
+    CGFloat b = self.highlighted ? (4.0f - BT_KEY_DEPTH) : (2.0f + BT_KEY_DEPTH);
+    UIEdgeInsets in = UIEdgeInsetsMake(0, 0, b, 0);
     self.titleEdgeInsets = in;
     self.imageEdgeInsets = in;
 }
