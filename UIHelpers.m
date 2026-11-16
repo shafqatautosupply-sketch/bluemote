@@ -363,7 +363,7 @@ CGFloat BTKeyRadius(CGRect r) {
 void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue) {
     UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:wall cornerRadius:BTKeyRadius(wall)];
     CGContextSaveGState(c);                                            /* contact shadow on the slab */
-    CGContextSetShadowWithColor(c, CGSizeMake(0, 1.0f), 2.5f, [UIColor colorWithWhite:0.0f alpha:0.50f].CGColor);
+    CGContextSetShadowWithColor(c, CGSizeMake(0, 0.6f), 1.5f, [UIColor colorWithWhite:0.0f alpha:0.42f].CGColor);
     [[UIColor colorWithWhite:0.40f alpha:1.0f] setFill];
     [p fill];
     CGContextRestoreGState(c);

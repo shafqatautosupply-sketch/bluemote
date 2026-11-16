@@ -442,23 +442,11 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
     CGFloat R = [self outerRadius], cr = [self centerRadius];
     CGRect ring = CGRectMake(m.x - R, m.y - R, 2 * R, 2 * R);
 
-    CGRect wall = CGRectOffset(ring, 0, BT_KEY_DEPTH + 1.0f);             /* side wall: the thickness of the machined ring */
-    CGContextSaveGState(c);                                            /* drop shadow */
+    CGContextSaveGState(c);                                            /* drop shadow (same as before, cast by the ring; the thick side wall is gone) */
     CGContextSetShadowWithColor(c, CGSizeMake(0, 3.0f), 7.0f, [UIColor colorWithWhite:0.0f alpha:0.5f].CGColor);
     [[UIColor colorWithWhite:0.40f alpha:1.0f] setFill];
-    CGContextFillEllipseInRect(c, wall);
+    CGContextFillEllipseInRect(c, ring);
     CGContextRestoreGState(c);
-    CGContextSaveGState(c);
-    CGContextAddEllipseInRect(c, wall);
-    CGContextClip(c);
-    CGFloat wallG[8] = { 0.60f, 0.61f, 0.65f, 1.0f, 0.34f, 0.35f, 0.39f, 1.0f };
-    CGGradientRef wg = CGGradientCreateWithColorComponents(cs, wallG, NULL, 2);
-    CGContextDrawLinearGradient(c, wg, CGPointMake(0, wall.origin.y), CGPointMake(0, CGRectGetMaxY(wall)), 0);
-    CGGradientRelease(wg);
-    CGContextRestoreGState(c);
-    [[UIColor colorWithWhite:0.18f alpha:1.0f] setStroke];
-    CGContextSetLineWidth(c, 1.0f);
-    CGContextStrokeEllipseInRect(c, CGRectInset(wall, 0.5f, 0.5f));
 
     CGContextSaveGState(c);                                            /* ring body */
     CGContextAddEllipseInRect(c, ring);
@@ -767,9 +755,6 @@ static const char *kRemoteCmds[10] = {
         infoB = [UIButton buttonWithType:UIButtonTypeInfoDark];                /* small "i": show / hide the instructions */
         [infoB addTarget:self action:@selector(infoTapped) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:infoB];
-        kbB = BTMakeKeyButton(nil, self, @selector(keyboardTapped));
-        [kbB setImage:[UIImage imageNamed:@"glyph_keyboard.png"] forState:UIControlStateNormal];
-        [self addSubview:kbB];
 
         expandB = BTMakeKeyButton([NSString stringWithUTF8String:"\xE2\x96\xBC"], self, @selector(toggleExpand));   /* down arrow = grow the pad */
         [self addSubview:expandB];
@@ -840,8 +825,7 @@ static const char *kRemoteCmds[10] = {
     panel.frame = box;
     dpad.frame = box;
     infoB.frame = CGRectMake(box.origin.x + 6.0f, box.origin.y + 6.0f, 30.0f, 30.0f);
-    kbB.frame = CGRectMake(CGRectGetMaxX(box) - 6.0f - 42.0f, box.origin.y + 8.0f, 42.0f, 30.0f);
-    expandB.frame = CGRectMake(CGRectGetMaxX(box) - 6.0f - 34.0f, CGRectGetMaxY(box) - 6.0f - 28.0f, 34.0f, 28.0f);
+    expandB.frame = CGRectMake(CGRectGetMaxX(box) - 6.0f - 34.0f, box.origin.y + 8.0f, 34.0f, 28.0f);   /* top-right, mirrors the "i" */
 
     remoteBody.frame = remote;
     CGFloat rw = remote.size.width;
@@ -861,6 +845,8 @@ static const char *kRemoteCmds[10] = {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     int padMode = (int)[d integerForKey:kPrefMediaPadMode];            /* 0 = D-pad (default), 1 = trackpad */
     reelsOn = [d boolForKey:kPrefReelsOn];
+    infoB.hidden = !BTInfoButtonEnabled();                              /* "i" button can be turned off in Settings */
+    if (infoB.hidden) helpOn = NO;
     [panel setReels:reelsOn method:(int)[d integerForKey:kPrefReelsMethod] swap:[d boolForKey:kPrefReelsSwap]];
     BOOL useDpad = (padMode == 0 && !reelsOn);                          /* Reels shows a plain pad, like the trackpad */
     dpad.hidden = !useDpad;
@@ -916,10 +902,6 @@ static const char *kRemoteCmds[10] = {
     helpOn = !helpOn;
     [panel setShowHelp:helpOn];
     [dpad setShowHelp:helpOn];
-}
-
-- (void)keyboardTapped {
-    [[NSNotificationCenter defaultCenter] postNotificationName:BTShowKeyboardNotification object:nil];
 }
 
 /* Reels on / off flips the page the same way Trackpad <-> Media does (right when turning on, back left when off). */

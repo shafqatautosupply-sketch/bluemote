@@ -38,7 +38,7 @@ void BTDrawEtchedBox(CGRect rect, CGFloat radius, BOOL recessed);               
 
 /* ---- machined aluminium key: square, round corners, smooth face on a dark side wall. Used by every key in the app. ---- */
 #define BT_KEY_RADIUS 18.0f      /* upper limit; the real radius follows the key size (BTKeyRadius), so keys read soft, not blocky */
-#define BT_KEY_DEPTH  2.5f
+#define BT_KEY_DEPTH  1.5f      /* thin side wall: keys read as slim machined keys, not thick plates */
 CGFloat BTKeyRadius(CGRect r);
 void BTKeyFrames(CGRect bounds, CGRect *wall, CGRect *face, BOOL down);
 void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue);
@@ -68,6 +68,12 @@ void BTSendOK(int phase);                                                       
 #define kPrefNaturalScroll  @"naturalScroll"
 #define kPrefBaseMode       @"baseMode"          /* 0 = trackpad, 1 = media */
 #define kPrefMediaExpanded  @"mediaPadExpanded"  /* 1 = Media trackpad expanded (remote collapsed to Back / Home / Menu) */
+
+#define kPrefShowInfo       @"showInfoButton"    /* 1 (default) = show the small "i" help button on the pads */
+static inline BOOL BTInfoButtonEnabled(void) {
+    NSNumber *n = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefShowInfo];
+    return n ? [n boolValue] : YES;
+}
 
 int BTActiveCount(NSSet *all);
 CGPoint BTCentroid(NSSet *all, UIView *v);

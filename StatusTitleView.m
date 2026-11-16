@@ -16,15 +16,15 @@
 }
 
 - (id)initWithTitle:(NSString *)title {
-    self = [super initWithFrame:CGRectMake(0, 0, 200, 44)];
+    self = [super initWithFrame:CGRectMake(0, 0, 140, 44)];
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         titleL = [self makeLabelFont:[UIFont boldSystemFontOfSize:18.0f]];
         titleL.textColor = [UIColor whiteColor];
         titleL.text = title;
-        titleL.frame = CGRectMake(0, 2, 200, 22);
+        titleL.frame = CGRectMake(0, 2, 140, 22);
         statusL = [self makeLabelFont:[UIFont systemFontOfSize:11.0f]];
-        statusL.frame = CGRectMake(0, 25, 200, 15);
+        statusL.frame = CGRectMake(0, 25, 140, 15);
         statusL.adjustsFontSizeToFitWidth = YES;
         statusL.minimumScaleFactor = 0.75f;
         statusL.textColor = [UIColor colorWithWhite:0.85f alpha:1.0f];

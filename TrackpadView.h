@@ -9,8 +9,8 @@
     UIButton *backB;
     UIButton *homeB;
     UIButton *infoB;
-    UIButton *kbB;
     BOOL helpOn;
     CGRect buttonBox;       /* etched section around the key row, drawn on the unibody */
 }
+- (void)reloadSettings;      /* shows / hides the "i" button (Settings) */
 @end

@@ -204,10 +204,6 @@
         [infoB addTarget:self action:@selector(infoTapped) forControlEvents:UIControlEventTouchUpInside];
         [surface addSubview:infoB];
 
-        kbB = BTMakeKeyButton(nil, self, @selector(keyboardTapped));   /* small keyboard button */
-        [kbB setImage:[UIImage imageNamed:@"glyph_keyboard.png"] forState:UIControlStateNormal];
-        [surface addSubview:kbB];
-
         leftB = BTMakeKeyButton(@"Left", self, @selector(leftTapped));
         rightB = BTMakeKeyButton(@"Right", self, @selector(rightTapped));
         backB = BTMakeKeyButton(@"Back", self, @selector(backTapped));
@@ -216,8 +212,15 @@
         [self addSubview:rightB];
         [self addSubview:backB];
         [self addSubview:homeB];
+        [self reloadSettings];
     }
     return self;
+}
+
+- (void)reloadSettings {
+    BOOL show = BTInfoButtonEnabled();
+    infoB.hidden = !show;
+    if (!show && helpOn) { helpOn = NO; [surface setShowHelp:NO]; }
 }
 
 /* Unibody: one brushed-aluminium block for the whole page. The pad and the key row are separate sections etched into it. */
@@ -234,7 +237,6 @@
 
     surface.frame = CGRectMake(inner.origin.x, inner.origin.y, inner.size.width, box.origin.y - gap - inner.origin.y);
     infoB.frame = CGRectMake(6, 6, 30, 30);
-    kbB.frame = CGRectMake(surface.bounds.size.width - 6 - 42, 8, 42, 30);
     CGFloat kgap = 8.0f;
     CGFloat bw = (box.size.width - 2 * kpad - 3 * kgap) / 4.0f;
     CGFloat y = box.origin.y + kpad;
@@ -254,10 +256,6 @@
 - (void)infoTapped {
     helpOn = !helpOn;
     [surface setShowHelp:helpOn];
-}
-
-- (void)keyboardTapped {
-    [[NSNotificationCenter defaultCenter] postNotificationName:BTShowKeyboardNotification object:nil];
 }
 
 - (void)leftTapped  { bluemote_send("CLICK 1"); }

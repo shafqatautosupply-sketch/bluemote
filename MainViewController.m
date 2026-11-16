@@ -31,6 +31,31 @@ static UIImage *BTBarIcon(NSString *name) {
         style:UIBarButtonItemStyleBordered target:self action:action];
 }
 
+/* A bar button that looks like the native bordered bar buttons (a single-segment bar control, white icon) but acts like
+   one too: it only fires when the finger lifts inside it. The control just draws; a clear button on top takes the touches. */
+- (UIView *)barButtonImage:(UIImage *)img action:(SEL)action width:(CGFloat)w control:(UISegmentedControl **)out {
+    UIView *box = [[[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 30)] autorelease];
+    UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:[NSArray arrayWithObject:img]];
+    seg.segmentedControlStyle = UISegmentedControlStyleBar;
+    seg.tintColor = BTBarButtonTintColor();
+    seg.frame = box.bounds;
+    seg.userInteractionEnabled = NO;
+    [box addSubview:seg];
+    UIButton *hit = [UIButton buttonWithType:UIButtonTypeCustom];
+    hit.frame = box.bounds;
+    [hit addTarget:self action:@selector(barDown:) forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
+    [hit addTarget:self action:@selector(barUp:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside |
+        UIControlEventTouchDragExit | UIControlEventTouchCancel];
+    [hit addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];   /* the action runs on release only */
+    [box addSubview:hit];
+    if (out) *out = seg;
+    [seg release];
+    return box;
+}
+
+- (void)barDown:(UIButton *)hit { ((UISegmentedControl *)[hit.superview.subviews objectAtIndex:0]).selectedSegmentIndex = 0; }   /* pressed look */
+- (void)barUp:(UIButton *)hit   { ((UISegmentedControl *)[hit.superview.subviews objectAtIndex:0]).selectedSegmentIndex = UISegmentedControlNoSegment; }
+
 - (id)init {
     self = [super init];
     if (self) {
@@ -39,13 +64,22 @@ static UIImage *BTBarIcon(NSString *name) {
         if (baseMode != 1) baseMode = 0;
 
         titleView = [[StatusTitleView alloc] initWithTitle:@"Trackpad"];
-        switchItem = [self barItemImage:@"bar_media.png" action:@selector(switchMode)];
-        settingsItem = [self barItemImage:@"bar_gear.png" action:@selector(openSettings)];
+        UIView *swBox = [self barButtonImage:BTBarIcon(@"bar_media.png") action:@selector(switchMode) width:36 control:&switchB];
+        UIView *kbBox = [self barButtonImage:BTBarIcon(@"glyph_keyboard.png") action:@selector(showKeyboard) width:40 control:NULL];
+        UIView *gearBox = [self barButtonImage:BTBarIcon(@"bar_gear.png") action:@selector(openSettings) width:36 control:NULL];
+        [switchB retain];
+        UIView *right = [[[UIView alloc] initWithFrame:CGRectMake(0, 0, 82, 30)] autorelease];   /* keyboard sits left of the gear */
+        kbBox.frame = CGRectMake(0, 0, 40, 30);
+        gearBox.frame = CGRectMake(46, 0, 36, 30);
+        [right addSubview:kbBox];
+        [right addSubview:gearBox];
+        leftItem = [[UIBarButtonItem alloc] initWithCustomView:swBox];
+        rightItem = [[UIBarButtonItem alloc] initWithCustomView:right];
         dropItem = [self barItemImage:@"bar_dropdown.png" action:@selector(hideKeyboard)];
         pasteItem = [[UIBarButtonItem alloc] initWithTitle:@"Paste" style:UIBarButtonItemStyleBordered
             target:self action:@selector(pasteTapped)];
         /* the bar is dark grey now, so its buttons are a slightly lighter grey instead of blue */
-        switchItem.tintColor = settingsItem.tintColor = dropItem.tintColor = pasteItem.tintColor = BTBarButtonTintColor();
+        dropItem.tintColor = pasteItem.tintColor = BTBarButtonTintColor();
 
         kbSegment = [[UISegmentedControl alloc] initWithItems:[NSArray arrayWithObjects:@"Arrows", @"F-Keys", nil]];
         kbSegment.segmentedControlStyle = UISegmentedControlStyleBar;
@@ -80,7 +114,9 @@ static UIImage *BTBarIcon(NSString *name) {
     [timer release];
     [titleView release];
     [kbSegment release];
-    [switchItem release];
+    [switchB release];
+    [leftItem release];
+    [rightItem release];
     [settingsItem release];
     [dropItem release];
     [pasteItem release];
@@ -114,8 +150,8 @@ static UIImage *BTBarIcon(NSString *name) {
     kbBar.tintColor = BTBarTintColor();                     /* same dark grey as the main bar */
     UINavigationItem *ki = [[UINavigationItem alloc] initWithTitle:@""];
     ki.titleView = kbSegment; /* [ Arrows | F-Keys ] */
-    ki.leftBarButtonItem = dropItem;
-    ki.rightBarButtonItem = pasteItem;
+    ki.leftBarButtonItem = pasteItem;
+    ki.rightBarButtonItem = dropItem;
     [kbBar pushNavigationItem:ki animated:NO];
     [ki release];
     [keyboard setTopBar:kbBar];
@@ -132,6 +168,7 @@ static UIImage *BTBarIcon(NSString *name) {
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [media reloadSettings]; /* Settings may have changed the media pad */
+    [trackpad reloadSettings];
 }
 
 /* ---------------------------------------------------------------- top bar */
@@ -139,10 +176,10 @@ static UIImage *BTBarIcon(NSString *name) {
 - (void)applyNavAnimated:(BOOL)animated {
     UINavigationItem *ni = self.navigationItem;
     [titleView setPageTitle:(baseMode == 0 ? @"Trackpad" : @"Media")];
-    switchItem.image = BTBarIcon(baseMode == 0 ? @"bar_media.png" : @"bar_trackpad.png");
+    [switchB setImage:BTBarIcon(baseMode == 0 ? @"bar_media.png" : @"bar_trackpad.png") forSegmentAtIndex:0];
     ni.titleView = titleView;
-    [ni setLeftBarButtonItem:switchItem animated:animated];
-    [ni setRightBarButtonItem:settingsItem animated:animated];
+    [ni setLeftBarButtonItem:leftItem animated:animated];
+    [ni setRightBarButtonItem:rightItem animated:animated];
 }
 
 - (void)switchMode {

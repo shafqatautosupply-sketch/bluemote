@@ -9,7 +9,9 @@
     KeyboardView *keyboard;
     StatusTitleView *titleView;
     UISegmentedControl *kbSegment;
-    UIBarButtonItem *switchItem;
+    UISegmentedControl *switchB;             /* Trackpad / Media switch, top-left of the bar */
+    UIBarButtonItem *leftItem;     /* custom view: the Trackpad / Media switch */
+    UIBarButtonItem *rightItem;    /* custom view: keyboard button, then the gear (Settings) */
     UIBarButtonItem *settingsItem;
     UIBarButtonItem *dropItem;
     UIBarButtonItem *pasteItem;

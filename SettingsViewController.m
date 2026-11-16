@@ -2,8 +2,8 @@
 #import "PairViewController.h"
 #import "UIHelpers.h"
 
-enum { SecBluetooth = 0, SecMedia = 1, SecTrackpad = 2 };
-enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, TagOkMode = 5 };
+enum { SecBluetooth = 0, SecMedia = 1, SecTrackpad = 2, SecInterface = 3 };
+enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
 
 @implementation SettingsViewController
 
@@ -22,7 +22,7 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
     [self.tableView reloadData];                  /* the device count may have changed */
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 3; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 4; }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)section {
     if (section == SecBluetooth) return 1;
@@ -33,7 +33,8 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
 - (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)section {
     if (section == SecBluetooth) return @"Bluetooth";
     if (section == SecMedia) return @"Media remote";
-    return @"Trackpad";
+    if (section == SecTrackpad) return @"Trackpad";
+    return @"Interface";
 }
 
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)section {
@@ -97,6 +98,9 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
             cell.textLabel.text = @"Swap Reels direction";
             cell.accessoryView = [self switchOn:[d boolForKey:kPrefReelsSwap] tag:TagReelsSwap];
         }
+    } else if (ip.section == SecInterface) {
+        cell.textLabel.text = @"Show info (i) button";
+        cell.accessoryView = [self switchOn:BTInfoButtonEnabled() tag:TagShowInfo];
     } else {
         cell.textLabel.text = @"Natural scrolling";
         cell.accessoryView = [self switchOn:[d boolForKey:kPrefNaturalScroll] tag:TagNatural];
@@ -125,6 +129,7 @@ enum { TagPadMode = 1, TagReelsMethod = 2, TagReelsSwap = 3, TagNatural = 4, Tag
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     if (sw.tag == TagReelsSwap) [d setBool:sw.on forKey:kPrefReelsSwap];
     else if (sw.tag == TagNatural) [d setBool:sw.on forKey:kPrefNaturalScroll];
+    else if (sw.tag == TagShowInfo) [d setBool:sw.on forKey:kPrefShowInfo];
 }
 
 @end
