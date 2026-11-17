@@ -11,10 +11,10 @@ static const KeyDef kArrow4[] = { {"\xE2\x97\x84",0x50}, {"\xE2\x96\xBC",0x51}, 
 static const KeyDef kF1[] = { {"F1",0x3a}, {"F2",0x3b},  {"F3",0x3c},  {"F4",0x3d} };
 static const KeyDef kF2[] = { {"F5",0x3e}, {"F6",0x3f},  {"F7",0x40},  {"F8",0x41} };
 static const KeyDef kF3[] = { {"F9",0x42}, {"F10",0x43}, {"F11",0x44}, {"F12",0x45} };
-static const KeyDef kF4[] = { {"Home",0x4a}, {"Print Screen",0x46}, {"End",0x4d} };
+static const KeyDef kF4[] = { {"Home",0x4a}, {"PrintScrn",0x46}, {"End",0x4d} };
 
 #define PASTE_MAX_CHARS 300000
-#define DEFAULT_STATUS @"Type with the iOS keyboard. Ctrl / Win / Alt / Shift apply to the next key."
+#define KB_RADIUS_SCALE 0.8f               /* keys a little squarer than the app default */
 
 /* Converts clipboard text to plain ASCII the keyboard can type. Counts what had to be skipped. */
 static void BTAppendStr(NSMutableData *d, const char *s) {
@@ -58,6 +58,43 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
     return d;
 }
 
+/* One triangle drawn four ways (rotated), so up / down / left / right arrows have exactly the same size and weight.
+   Text triangles (the unicode glyphs) come in different sizes per direction, which is why they looked uneven. */
+static UIImage *KBArrowImage(int usage) {
+    CGFloat angle = 0;
+    switch (usage) {
+        case 0x52: angle = 0; break;                 /* up    */
+        case 0x4f: angle = (CGFloat)M_PI_2; break;   /* right */
+        case 0x51: angle = (CGFloat)M_PI; break;     /* down  */
+        case 0x50: angle = -(CGFloat)M_PI_2; break;  /* left  */
+        default: return nil;
+    }
+    CGSize sz = CGSizeMake(22, 22);
+    UIGraphicsBeginImageContextWithOptions(sz, NO, 0);
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    for (int pass = 0; pass < 2; pass++) {          /* pass 0: light engraving edge 1 pt below, pass 1: the arrow */
+        CGContextSaveGState(c);
+        CGContextTranslateCTM(c, sz.width / 2, sz.height / 2 + (pass == 0 ? 1.0f : 0.0f));
+        CGContextRotateCTM(c, angle);
+        UIBezierPath *p = [UIBezierPath bezierPath];
+        [p moveToPoint:CGPointMake(0, -6.5f)];
+        [p addLineToPoint:CGPointMake(7.0f, 5.5f)];
+        [p addLineToPoint:CGPointMake(-7.0f, 5.5f)];
+        [p closePath];
+        p.lineJoinStyle = kCGLineJoinRound;
+        p.lineWidth = 1.5f;
+        UIColor *col = pass == 0 ? [UIColor colorWithWhite:1.0f alpha:0.90f] : [UIColor colorWithWhite:0.22f alpha:1.0f];
+        [col setFill];
+        [col setStroke];
+        [p fill];
+        [p stroke];
+        CGContextRestoreGState(c);
+    }
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
+}
+
 /* The sheet's background: full-bleed brushed aluminium with the key section etched into it. */
 @interface KBBackdrop : UIView {
     CGRect pocket;
@@ -89,6 +126,13 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (UIButton *)keyButton:(const KeyDef *)def {
     UIButton *b = BTMakeKeyButton([NSString stringWithUTF8String:def->title], nil, NULL);
     b.tag = def->usage;
+    [(BTKeyButton *)b setRadiusScale:KB_RADIUS_SCALE];
+    UIImage *arrow = KBArrowImage(def->usage);
+    if (arrow) {
+        [b setTitle:@"" forState:UIControlStateNormal];
+        [b setImage:arrow forState:UIControlStateNormal];
+        [b setImage:arrow forState:UIControlStateHighlighted];
+    }
     [b addTarget:self action:@selector(keyDown:) forControlEvents:UIControlEventTouchDown];
     [b addTarget:self action:@selector(keyUp:)
         forControlEvents:(UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel)];
@@ -108,6 +152,7 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (UIButton *)modButton:(NSString *)title mask:(int)mask {
     UIButton *b = BTMakeKeyButton(title, self, @selector(modPressed:));
     b.tag = mask;                      /* tag == HID modifier bit */
+    [(BTKeyButton *)b setRadiusScale:KB_RADIUS_SCALE];
     return b;
 }
 
@@ -161,19 +206,6 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
         [fkeyRows addObject:[self rowFrom:kF2 count:4 pane:fkeyPane]];
         [fkeyRows addObject:[self rowFrom:kF3 count:4 pane:fkeyPane]];
         [fkeyRows addObject:[self rowFrom:kF4 count:3 pane:fkeyPane]];
-
-        status = [[UILabel alloc] initWithFrame:CGRectZero];
-        status.backgroundColor = [UIColor clearColor];
-        status.textColor = [UIColor colorWithWhite:0.30f alpha:1.0f];
-        status.shadowColor = [UIColor colorWithWhite:1.0f alpha:0.85f];
-        status.shadowOffset = CGSizeMake(0, 1);
-        status.font = [UIFont systemFontOfSize:11.0f];
-        status.textAlignment = NSTextAlignmentCenter;
-        status.adjustsFontSizeToFitWidth = YES;
-        status.minimumScaleFactor = 0.7f;
-        status.text = DEFAULT_STATUS;
-        [self addSubview:status];
-        [status release];
     }
     return self;
 }
@@ -190,9 +222,12 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 
 /* ---------------------------------------------------------------- layout */
 
-/* square-ish aluminium keys on an even grid: 8 pt around and between keys in a row, 6 pt between rows */
-- (void)layoutRows:(NSArray *)rows width:(CGFloat)w {
-    CGFloat pad = 8.0f, gap = 8.0f, vgap = 6.0f, rowH = 36.0f, y = pad;
+/* aluminium keys on an even grid: 10 pt border at the sides, 11 pt on top and 6 pt at the bottom (each key frame already leaves ~5 pt of shadow room under its face, so top and bottom look even),
+   8 pt between keys in a row, 6 pt between rows. Row height fills whatever height the pane has. */
+- (void)layoutRows:(NSArray *)rows width:(CGFloat)w height:(CGFloat)h {
+    CGFloat pad = 10.0f, padTop = 11.0f, padBottom = 6.0f, gap = 8.0f, vgap = 6.0f, y = padTop;
+    int nrows = (int)[rows count];
+    CGFloat rowH = floorf((h - padTop - padBottom - (nrows - 1) * vgap) / nrows);   /* 40 pt at 195 pt pane height */
     for (NSArray *row in rows) {
         int cnt = (int)[row count];
         CGFloat bw = (w - 2 * pad - (cnt - 1) * gap) / cnt;
@@ -208,13 +243,12 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
     const CGFloat barH = 44.0f, side = 8.0f;
     backdrop.frame = self.bounds;
     topBar.frame = CGRectMake(0, 0, w, barH);
-    CGRect paneFrame = CGRectMake(side, barH + 4.0f, w - 2 * side, 178.0f);   /* the etched key section */
+    CGRect paneFrame = CGRectMake(side, barH + 4.0f, w - 2 * side, 195.0f);   /* the etched key section */
     [(KBBackdrop *)backdrop setPocket:paneFrame];
     arrowPane.frame = paneFrame;
     fkeyPane.frame = paneFrame;
-    [self layoutRows:arrowRows width:paneFrame.size.width];
-    [self layoutRows:fkeyRows width:paneFrame.size.width];
-    status.frame = CGRectMake(10, CGRectGetMaxY(paneFrame) + 3.0f, w - 20, 14);
+    [self layoutRows:arrowRows width:paneFrame.size.width height:paneFrame.size.height];
+    [self layoutRows:fkeyRows width:paneFrame.size.width height:paneFrame.size.height];
 }
 
 - (void)showLayout:(int)index {
@@ -287,29 +321,23 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (void)togglePaste {
     if (bluemote_paste_active()) {
         bluemote_paste_cancel();
-        status.text = @"Stopping...";
         return;
     }
     if (!bluemote_is_connected()) {
-        status.text = @"Not connected to a device. Pair or reconnect first.";
         return;
     }
     NSString *clip = [[UIPasteboard generalPasteboard] string];
     if ([clip length] == 0) {
-        status.text = @"The iOS clipboard has no text.";
         return;
     }
     int skipped = 0;
     NSData *d = BTSanitize(clip, &skipped);
     if ([d length] == 0) {
-        status.text = @"Nothing in the clipboard can be typed (only unsupported characters).";
         return;
     }
     if (bluemote_paste_begin((const char *)[d bytes], (int)[d length]) != 0) {
-        status.text = @"Paste is busy, try again in a moment.";
         return;
     }
-    pasteSkipped = skipped;
     [pasteTimer invalidate];
     [pasteTimer release];
     pasteTimer = [[NSTimer scheduledTimerWithTimeInterval:0.15 target:self selector:@selector(pasteTick)
@@ -319,19 +347,10 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 }
 
 - (void)pasteTick {
-    int total = bluemote_paste_total();
-    int pos = bluemote_paste_progress();
-    int pct = total > 0 ? (int)((long long)pos * 100 / total) : 0;
-    NSString *skipNote = pasteSkipped > 0
-        ? [NSString stringWithFormat:@" (%d unsupported skipped)", pasteSkipped] : @"";
-    if (bluemote_paste_active()) {
-        status.text = [NSString stringWithFormat:@"Pasting %d%%  (%d / %d)%@", pct, pos, total, skipNote];
-    } else {
+    if (!bluemote_paste_active()) {                 /* finished or stopped: tell the top bar to refresh its paste button */
         [pasteTimer invalidate];
         [pasteTimer release];
         pasteTimer = nil;
-        if (pos >= total && total > 0) status.text = [NSString stringWithFormat:@"Paste finished (%d characters).%@", total, skipNote];
-        else status.text = [NSString stringWithFormat:@"Paste stopped at %d%% (%d / %d).", pct, pos, total];
         [self notifyPasteState];
     }
 }
