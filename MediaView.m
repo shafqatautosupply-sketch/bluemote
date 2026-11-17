@@ -30,21 +30,32 @@ static void RemoteGlyph(CGContextRef c, int g, CGRect r) {
     CGContextSetLineCap(c, kCGLineCapRound);
     CGContextSetLineJoin(c, kCGLineJoinRound);
     switch (g) {
-        case GBack:
+        case GBack:                                      /* same bold left chevron as the Back key under the trackpad */
+            CGContextSetLineWidth(c, 5.5f);
             CGContextBeginPath(c);
-            CGContextMoveToPoint(c, mx + 0.9f * s, my - 1.1f * s);
-            CGContextAddLineToPoint(c, mx - 0.9f * s, my);
-            CGContextAddLineToPoint(c, mx + 0.9f * s, my + 1.1f * s);
-            CGContextClosePath(c);
+            CGContextMoveToPoint(c, mx + 5.0f, my - 10.0f);
+            CGContextAddLineToPoint(c, mx - 5.0f, my);
+            CGContextAddLineToPoint(c, mx + 5.0f, my + 10.0f);
             CGContextStrokePath(c);
             break;
-        case GHome:
-            CGContextStrokeEllipseInRect(c, CGRectMake(mx - 1.15f * s, my - 1.15f * s, 2.3f * s, 2.3f * s));
+        case GHome:                                      /* same house as the Home key under the trackpad */
+            CGContextSetLineWidth(c, 2.0f);
+            CGContextBeginPath(c);
+            CGContextMoveToPoint(c, mx, my - 11.0f);
+            CGContextAddLineToPoint(c, mx + 12.5f, my - 0.5f);
+            CGContextAddLineToPoint(c, mx - 12.5f, my - 0.5f);
+            CGContextClosePath(c);
+            CGContextDrawPath(c, kCGPathFillStroke);
+            CGContextBeginPath(c);                       /* body with the door cut out (even-odd) */
+            CGContextAddRect(c, CGRectMake(mx - 8.0f, my - 1.0f, 16.0f, 11.5f));
+            CGContextAddRect(c, CGRectMake(mx - 2.5f, my + 4.0f, 5.0f, 6.5f));
+            CGContextEOFillPath(c);
             break;
-        case GMenu:
+        case GMenu:                                      /* bold bars, as heavy as the Back chevron */
+            CGContextSetLineWidth(c, 4.5f);
             for (int k = -1; k <= 1; k++) {
-                CGContextMoveToPoint(c, mx - 1.2f * s, my + k * 0.85f * s);
-                CGContextAddLineToPoint(c, mx + 1.2f * s, my + k * 0.85f * s);
+                CGContextMoveToPoint(c, mx - 1.0f * s, my + k * 9.0f);
+                CGContextAddLineToPoint(c, mx + 1.0f * s, my + k * 9.0f);
             }
             CGContextStrokePath(c);
             break;
@@ -92,25 +103,30 @@ static void RemoteGlyph(CGContextRef c, int g, CGRect r) {
             CGContextFillRect(c, CGRectMake(mx - s, my - s, 2.0f * s, 2.0f * s));
             break;
         case GMin:                                       /* minimize: a bold bar low in the key, like a window's minimize */
-            CGContextSetLineWidth(c, 3.2f);
+            CGContextSetLineWidth(c, 4.5f);                  /* as heavy as the Menu bars */
             CGContextBeginPath(c);
-            CGContextMoveToPoint(c, mx - 1.3f * s, my + 0.75f * s);
-            CGContextAddLineToPoint(c, mx + 1.3f * s, my + 0.75f * s);
+            CGContextMoveToPoint(c, mx - 1.2f * s, my + 0.75f * s);
+            CGContextAddLineToPoint(c, mx + 1.2f * s, my + 0.75f * s);
             CGContextStrokePath(c);
             break;
-        case GMax:                                       /* maximize: a square outline */
-            CGContextSetLineWidth(c, 2.6f);
-            CGContextStrokeRect(c, CGRectMake(mx - 1.15f * s, my - 1.15f * s, 2.3f * s, 2.3f * s));
+        case GMax:                                       /* maximize: the keyboard drop-down chevron turned to point up, squashed flat so it does not read as the Back arrow */
+            CGContextSetLineWidth(c, 5.0f);
+            CGContextBeginPath(c);
+            CGContextMoveToPoint(c, mx - 10.5f, my + 4.0f);
+            CGContextAddLineToPoint(c, mx, my - 4.0f);
+            CGContextAddLineToPoint(c, mx + 10.5f, my + 4.0f);
+            CGContextStrokePath(c);
             break;
         case GPadDpad: {                                 /* D-pad logo: a ring with four arrows and a centre button */
-            CGFloat R = 1.55f * s;
-            CGContextSetLineWidth(c, 2.0f);
+            CGFloat R = 1.55f * s;                                   /* original size */
+            CGContextSetLineWidth(c, 3.0f);                          /* thicker ring (the centre button keeps the thin line) */
             CGContextStrokeEllipseInRect(c, CGRectMake(mx - R, my - R, 2 * R, 2 * R));
+            CGContextSetLineWidth(c, 2.0f);
             CGContextStrokeEllipseInRect(c, CGRectMake(mx - 0.42f * s, my - 0.42f * s, 0.84f * s, 0.84f * s));
             static const float dxs[4] = { 0, 0, -1, 1 }, dys[4] = { -1, 1, 0, 0 };
             for (int k = 0; k < 4; k++) {
                 CGFloat dx = dxs[k], dy = dys[k];                    /* unit direction; (-dy, dx) is the sideways unit */
-                CGFloat px = mx + dx * 1.02f * s, py = my + dy * 1.02f * s;
+                CGFloat px = mx + dx * 0.94f * s, py = my + dy * 0.94f * s;    /* a hair closer in, so the thicker ring does not touch the arrow tips */
                 CGContextBeginPath(c);
                 CGContextMoveToPoint(c, px + dx * 0.34f * s, py + dy * 0.34f * s);
                 CGContextAddLineToPoint(c, px - dx * 0.22f * s - dy * 0.40f * s, py - dy * 0.22f * s + dx * 0.40f * s);
@@ -122,8 +138,9 @@ static void RemoteGlyph(CGContextRef c, int g, CGRect r) {
         }
         case GPadTrack: {                                /* trackpad logo: a rounded pad with the click bar along its bottom */
             CGRect pr = CGRectMake(mx - 1.45f * s, my - 1.15f * s, 2.9f * s, 2.3f * s);
-            CGContextSetLineWidth(c, 2.0f);
+            CGContextSetLineWidth(c, 2.6f);
             UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:pr cornerRadius:0.55f * s];
+            p.lineWidth = 2.6f;
             [p stroke];
             CGContextBeginPath(c);
             CGContextMoveToPoint(c, pr.origin.x, CGRectGetMaxY(pr) - 0.7f * s);
@@ -203,9 +220,45 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
 /* ======================================================================== round remote button */
 
+/* The engraved glyph lives in its own small fixed-size view, centred on the key. The key body behind it can then be
+   stretched while it animates (see RemoteButton) without squashing the glyph. */
+@interface RemoteGlyphView : UIView {
+    int glyph;
+    BOOL toggled, down;
+}
+- (void)setGlyph:(int)g;
+- (void)setToggled:(BOOL)t;
+- (void)setDown:(BOOL)d;
+@end
+
+@implementation RemoteGlyphView
+- (id)initWithFrame:(CGRect)f {
+    self = [super initWithFrame:f];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+        self.userInteractionEnabled = NO;
+    }
+    return self;
+}
+- (void)setGlyph:(int)g   { if (g != glyph) { glyph = g; [self setNeedsDisplay]; } }
+- (void)setToggled:(BOOL)t { if (t != toggled) { toggled = t; [self setNeedsDisplay]; } }
+- (void)setDown:(BOOL)d   { if (d != down) { down = d; [self setNeedsDisplay]; } }
+- (void)drawRect:(CGRect)rect {
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    CGRect wall, face;
+    BTKeyFrames(self.bounds, &wall, &face, down);                  /* same face rectangle as a 44 pt high key */
+    RemoteDrawGlyphEngraved(c, glyph, face, !toggled);
+}
+@end
+
+#define RB_CAP   24.0f      /* the key's rounded ends (radius + shadow room) that must never be stretched */
+#define RB_GLYPH_W 64.0f
+
 @interface RemoteButton : UIControl {
     int glyph;
     BOOL toggled;
+    RemoteGlyphView *glyphView;
 }
 - (id)initWithGlyph:(int)g;
 - (void)setToggled:(BOOL)t;
@@ -220,14 +273,32 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
         glyph = g;
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
-        self.contentMode = UIViewContentModeRedraw;      /* Back / Home / Menu change width: redraw, never stretch */
+        self.contentMode = UIViewContentModeRedraw;      /* redrawn once at its final size; while the size animates the middle of the bitmap stretches */
+        glyphView = [[RemoteGlyphView alloc] initWithFrame:CGRectMake(0, 0, RB_GLYPH_W, 44.0f)];
+        [glyphView setGlyph:g];
+        [self addSubview:glyphView];
+        [glyphView release];
     }
     return self;
 }
 
-- (void)setGlyph:(int)g { glyph = g; [self setNeedsDisplay]; }
-- (void)setToggled:(BOOL)t { toggled = t; [self setNeedsDisplay]; }
-- (void)setHighlighted:(BOOL)h { [super setHighlighted:h]; [self setNeedsDisplay]; }
+/* Called inside the layout animation, so the glyph slides to the new centre together with the key.
+   The key body is a 9-slice: the two rounded ends keep their shape and only the flat middle stretches, which is
+   invisible because the face is the same all the way across. */
+- (void)setFrame:(CGRect)f {
+    [super setFrame:f];
+    CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];                              /* the slice must change at once, never tween */
+    if (w > 2 * RB_CAP + 2.0f) self.layer.contentsCenter = CGRectMake(RB_CAP / w, 0.0f, (w - 2 * RB_CAP) / w, 1.0f);
+    else                       self.layer.contentsCenter = CGRectMake(0.0f, 0.0f, 1.0f, 1.0f);
+    [CATransaction commit];
+    glyphView.center = CGPointMake(w / 2.0f, h / 2.0f);
+}
+
+- (void)setGlyph:(int)g { glyph = g; [glyphView setGlyph:g]; }
+- (void)setToggled:(BOOL)t { toggled = t; [glyphView setToggled:t]; [self setNeedsDisplay]; }
+- (void)setHighlighted:(BOOL)h { [super setHighlighted:h]; [glyphView setDown:h]; [self setNeedsDisplay]; }
 
 - (void)drawRect:(CGRect)rect {
     CGContextRef c = UIGraphicsGetCurrentContext();
@@ -238,9 +309,7 @@ static void BTDrawTriangle(CGContextRef c, CGPoint p, int dir, CGFloat s) {
 
     BTKeyDrawWall(c, cs, wall, toggled);
     BTKeyDrawFace(c, cs, face, down, toggled);
-
-    RemoteDrawGlyphEngraved(c, glyph, face, !toggled);
-    CGColorSpaceRelease(cs);
+    CGColorSpaceRelease(cs);                                         /* the glyph is drawn by glyphView */
 }
 
 @end
@@ -700,6 +769,7 @@ static const char *kRemoteCmds[10] = {
 };
 
 @interface MediaView ()
+- (NSArray *)extraViews;
 - (void)applyExtrasAlpha;
 - (void)stopAnimation;
 - (void)animateCollapseTo:(CGFloat)target;
@@ -778,8 +848,6 @@ static BOOL expandedAtLaunch(void) { return [[NSUserDefaults standardUserDefault
 }
 
 - (void)dealloc {
-    [animLink invalidate];
-    animLink = nil;
     [centerButtons release];
     [super dealloc];
 }
@@ -805,34 +873,44 @@ static CGFloat BTLerp(CGFloat a, CGFloat b, CGFloat t) { return a + (b - a) * t;
     remoteBox.frame = remote;
 
     panel.frame = box;
-    /* The ring keeps the size it has with the full remote and stays centred in the pad section as it grows, so it is
-       never redrawn or rescaled while the section moves. */
+    /* The ring keeps the size AND the position it has with the full remote; the pad section just grows around it when
+       the remote minimizes, so the ring is never moved, redrawn or rescaled. */
     CGFloat fullBoxH = MAX(inner.size.height - fullH - section, 40.0f);
     dpad.bounds = CGRectMake(0, 0, box.size.width, fullBoxH);
-    dpad.center = CGPointMake(CGRectGetMidX(box), CGRectGetMidY(box));
+    dpad.center = CGPointMake(CGRectGetMidX(box), inner.origin.y + fullBoxH / 2.0f);   /* always where it sits with the full remote: it does not move when the remote minimizes */
     infoB.frame = CGRectMake(box.origin.x + 6.0f, box.origin.y + 6.0f, 30.0f, 30.0f);
 
     remoteBody.frame = remote;
     CGFloat rw = remote.size.width;
-    CGFloat gridW = 3 * bs + 2 * gap, gx = (rw - gridW) / 2.0f;
     CGFloat dy = remoteH - fullH;                                          /* keeps the other keys where they were while the block shrinks around them */
-    CGFloat sw = MIN(64.0f, MAX(bs, gx - pad - gap));                      /* the side column (VOL / CH rockers and the two keys under them) takes all the room beside the centre keys */
+    /* VOL / CH rockers: width unchanged (58 pt on a 320 pt screen), worked out the way it always was */
+    CGFloat oldGx = (rw - (3 * bs + 2 * gap)) / 2.0f;
+    CGFloat sw = MIN(64.0f, MAX(bs, oldGx - pad - gap));
+
+    /* All the other keys (the six media keys, Back / Home / Menu, minimize / maximize and the D-pad / trackpad switch)
+       are exactly the size of the Back / Home keys under the main trackpad: same width formula, same 44 pt height. */
+    CGFloat iw = floorf((rw - 2 * pad - 2 * gap) * 0.20f);
+    CGFloat kw = iw;
+    CGFloat hg = (rw - 2 * pad - 2 * sw - 3 * kw) / 4.0f;                  /* equal gaps between rocker, three key columns and rocker */
+    if (hg < 2.0f) { hg = 2.0f; kw = floorf((rw - 2 * pad - 2 * sw - 4 * hg) / 3.0f); }
+    CGFloat gx = pad + sw + hg;                                            /* left edge of the first key column */
+    CGFloat sx = pad + (sw - kw) / 2.0f;                                   /* the corner keys sit centred under the rockers */
 
     volR.frame = CGRectMake(pad, pad + dy, sw, 2 * bs + gap);              /* rockers span the top two rows, Minimize / the pad switch sit in the third */
     chR.frame  = CGRectMake(rw - pad - sw, pad + dy, sw, 2 * bs + gap);
-    sizeB.frame  = CGRectMake(pad, pad + 2 * (bs + gap) + dy, sw, bs);     /* same spot in both states: the bottom-left corner */
-    padB.frame = CGRectMake(rw - pad - sw, pad + 2 * (bs + gap) + dy, sw, bs);
+    sizeB.frame  = CGRectMake(sx, pad + 2 * (bs + gap) + dy, kw, bs);      /* same spot in both states: the bottom-left corner */
+    padB.frame = CGRectMake(rw - sx - kw, pad + 2 * (bs + gap) + dy, kw, bs);
 
     /* Minimized: Back / Home / Menu share the whole row to the right of the minimize / maximize key */
-    CGFloat rowX = pad + sw + gap;
-    CGFloat wb = (rw - pad - rowX - 2 * gap) / 3.0f;
+    CGFloat rowX = sx + kw + hg;
+    CGFloat wb = ((rw - sx) - rowX - 2 * hg) / 3.0f;
     for (int i = 0; i < (int)[centerButtons count]; i++) {
         int row = i / 3, col = i % 3;
         CGRect f;
         if (i < 3) {
-            f = CGRectMake(BTLerp(gx + col * (bs + gap), rowX + col * (wb + gap), t), pad, BTLerp(bs, wb, t), bs);
+            f = CGRectMake(BTLerp(gx + col * (kw + hg), rowX + col * (wb + hg), t), pad, BTLerp(kw, wb, t), bs);
         } else {
-            f = CGRectMake(gx + col * (bs + gap), pad + row * (bs + gap) + dy, bs, bs);
+            f = CGRectMake(gx + col * (kw + hg), pad + row * (bs + gap) + dy, kw, bs);
         }
         ((UIView *)[centerButtons objectAtIndex:i]).frame = f;
     }
@@ -857,50 +935,67 @@ static CGFloat BTLerp(CGFloat a, CGFloat b, CGFloat t) { return a + (b - a) * t;
     [dpad setShowHelp:helpOn];
 }
 
-/* everything in the remote block except Back / Home / Menu and the minimize / maximize key fades out when minimized,
-   quickly at the start of the move, and comes back once the block has grown again */
-- (void)applyExtrasAlpha {
-    CGFloat a = 1.0f - MIN(1.0f, collapseT / 0.35f);
-    BOOL on = (a > 0.5f);
+/* everything in the remote block except Back / Home / Menu and the minimize / maximize key: fades out quickly at the
+   start of the move when minimized, and fades back in near the end when the block has grown again */
+- (NSArray *)extraViews {
     NSMutableArray *extras = [NSMutableArray arrayWithObjects:volR, chR, padB, nil];
     for (int i = 3; i < (int)[centerButtons count]; i++) [extras addObject:[centerButtons objectAtIndex:i]];
-    for (UIView *v in extras) {
+    return extras;
+}
+
+- (void)applyExtrasAlpha {
+    if (skipAlpha) return;                                              /* an animation is fading them separately */
+    CGFloat a = (collapseT > 0.5f) ? 0.0f : 1.0f;
+    for (UIView *v in [self extraViews]) {
         v.alpha = a;
-        v.userInteractionEnabled = on;
+        v.userInteractionEnabled = (a > 0.5f);
     }
 }
 
+/* Cancels a move in progress (the pad flip and Settings jump straight to the saved state). */
 - (void)stopAnimation {
-    if (animLink) {
-        [animLink invalidate];
-        animLink = nil;
+    if (!collapseAnimating) return;
+    collapseAnimating = NO;
+    animGen++;
+    for (UIView *v in self.subviews) {
+        [v.layer removeAllAnimations];
+        for (UIView *sv in v.subviews) [sv.layer removeAllAnimations];
     }
 }
 
+/* The move is a Core Animation: every key and section is given its final frame once, inside the animation block, and
+   the GPU does the tweening. Nothing is redrawn or re-laid-out per frame on the main thread any more (the old display
+   link redrew the three top keys, with their shadows, 30-60 times a second, which is what made it stutter on the
+   iPhone 4S). Keys only slide; the top-row keys stretch as a 9-slice (see RemoteButton). */
 - (void)animateCollapseTo:(CGFloat)target {
-    animFrom = collapseT;
-    animTo = target;
-    animDur = MAX(0.15, 0.38 * fabs((double)(target - collapseT)));
-    animStart = CACurrentMediaTime();
-    if (animLink == nil) {
-        animLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(animTick:)];
-        [animLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-    }
-}
+    BOOL minimizing = (target > 0.5f);
+    const NSTimeInterval dur = 0.38;
+    collapseT = target;
+    collapseAnimating = YES;
+    int gen = ++animGen;
 
-- (void)animTick:(CADisplayLink *)link {
-    CGFloat p = (CGFloat)((CACurrentMediaTime() - animStart) / animDur);
-    if (p > 1.0f) p = 1.0f;
-    CGFloat e = p * p * (3.0f - 2.0f * p);                              /* ease in and out */
-    collapseT = animFrom + (animTo - animFrom) * e;
-    [self setNeedsLayout];
-    [self layoutIfNeeded];
-    if (p >= 1.0f) {
-        [self stopAnimation];
-        collapseT = animTo;
-        [self setNeedsLayout];
-        [panel setShowHelp:helpOn];                                     /* the help card is drawn, so it waits until the move is done */
-    }
+    skipAlpha = YES;
+    [UIView animateWithDuration:dur delay:0.0
+        options:(UIViewAnimationOptionCurveEaseInOut | UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction)
+        animations:^{
+            [self setNeedsLayout];
+            [self layoutIfNeeded];
+        }
+        completion:^(BOOL finished) {
+            if (gen != animGen) return;                                 /* a newer move took over */
+            collapseAnimating = NO;
+            [panel setShowHelp:helpOn];                                 /* the help card is drawn, so it waits until the move is done */
+        }];
+    skipAlpha = NO;
+
+    NSArray *extras = [self extraViews];
+    for (UIView *v in extras) v.userInteractionEnabled = !minimizing;
+    [UIView animateWithDuration:0.14 delay:(minimizing ? 0.0 : dur * 0.65)
+        options:(UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction)
+        animations:^{
+            for (UIView *v in extras) v.alpha = (minimizing ? 0.0f : 1.0f);
+        }
+        completion:nil];
 }
 
 - (void)toggleSize {

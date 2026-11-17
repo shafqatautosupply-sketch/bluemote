@@ -3,7 +3,7 @@
 #import "UIHelpers.h"
 
 enum { SecBluetooth = 0, SecMedia = 1, SecTrackpad = 2, SecInterface = 3 };
-enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
+enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScrollTab = 7 };
 
 @implementation SettingsViewController
 
@@ -27,6 +27,7 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)section {
     if (section == SecBluetooth) return 1;
     if (section == SecMedia) return 2;
+    if (section == SecTrackpad) return 2;                       /* natural scrolling, scroll tab */
     return 1;
 }
 
@@ -40,6 +41,8 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)section {
     if (section == SecMedia)
         return @"OK button: Select works like a real TV remote (picks the highlighted keyboard suggestion); use Enter only if your TV ignores Select.";
+    if (section == SecTrackpad)
+        return @"Scroll tab: a strip along the left edge of the trackpad. Drag it up or down to scroll; it fades out when not touched.";
     return nil;
 }
 
@@ -94,9 +97,12 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
     } else if (ip.section == SecInterface) {
         cell.textLabel.text = @"Show info (i) button";
         cell.accessoryView = [self switchOn:BTInfoButtonEnabled() tag:TagShowInfo];
-    } else {
+    } else if (ip.row == 0) {
         cell.textLabel.text = @"Natural scrolling";
         cell.accessoryView = [self switchOn:[d boolForKey:kPrefNaturalScroll] tag:TagNatural];
+    } else {
+        cell.textLabel.text = @"Scroll tab";
+        cell.accessoryView = [self switchOn:BTScrollTabEnabled() tag:TagScrollTab];
     }
     return cell;
 }
@@ -121,6 +127,7 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6 };
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     if (sw.tag == TagNatural) [d setBool:sw.on forKey:kPrefNaturalScroll];
     else if (sw.tag == TagShowInfo) [d setBool:sw.on forKey:kPrefShowInfo];
+    else if (sw.tag == TagScrollTab) [d setBool:sw.on forKey:kPrefScrollTab];
 }
 
 @end

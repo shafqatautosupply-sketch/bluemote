@@ -15,9 +15,10 @@
     NSTimeInterval startTime, lastBeganTime, lastTapEnd;
     float remX, remY, scrollAccX, scrollAccY;
     NSMutableDictionary *startPoints;     /* where each individual finger started */
-    BOOL showHelp;
+    BOOL showHelp, tabHelp;
 }
 - (void)setShowHelp:(BOOL)show;
+- (void)setTabHelp:(BOOL)on;
 @end
 
 @implementation TrackpadSurface
@@ -44,10 +45,17 @@
     [self setNeedsDisplay];
 }
 
+- (void)setTabHelp:(BOOL)on {
+    tabHelp = on;
+    if (showHelp) [self setNeedsDisplay];
+}
+
 - (void)drawRect:(CGRect)rect {
     BTDrawEtchedBox(self.bounds, 10.0f, YES);                       /* the pad: its own etched section of the body */
     if (showHelp) {
-        BTDrawHelpCard(self.bounds, @"Drag: move the cursor\nTap: click\nTwo-finger tap: right click / Back\nTwo-finger drag: scroll in any direction\nTap, then touch and drag: drag & drop");
+        NSString *t = @"Drag: move the cursor\nTap: click\nTwo-finger tap: right click / Back\nTwo-finger drag: scroll in any direction\nTap, then touch and drag: drag & drop";
+        if (tabHelp) t = [t stringByAppendingString:@"\nLeft tab: drag up / down to scroll"];
+        BTDrawHelpCard(self.bounds, t);
     }
 }
 
@@ -187,6 +195,315 @@
 
 @end
 
+/* ---------- scroll tab ---------- */
+
+/* A strip along the left edge of the pad. It is nearly invisible until it is touched, then it lights up and a finger
+   dragging along it sends wheel scrolling. It only reacts to a finger that LANDS on it: a finger that is steering the
+   cursor and slides across it keeps steering the cursor (UIKit keeps delivering that touch to the pad), and a finger
+   resting on the tab is never counted by the pad, so it cannot move the cursor or click. */
+
+#define TAB_IDLE_ALPHA 0.22f
+#define TAB_STEP       7.0f         /* points of finger travel per wheel step */
+
+@interface TrackpadScrollTab : UIView {
+    BOOL active;
+    CGFloat lastY, acc;
+}
+@end
+
+@implementation TrackpadScrollTab
+
+- (id)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;
+        self.multipleTouchEnabled = NO;
+        self.alpha = TAB_IDLE_ALPHA;
+    }
+    return self;
+}
+
+- (void)setActive:(BOOL)a {
+    if (a == active) return;
+    active = a;
+    [self setNeedsDisplay];
+}
+
+- (void)fadeTo:(CGFloat)alpha duration:(NSTimeInterval)d {
+    [UIView animateWithDuration:d delay:0.0
+        options:(UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveEaseOut)
+        animations:^{ self.alpha = alpha; }
+        completion:nil];
+}
+
+- (void)fadeOut {
+    if (!active) [self fadeTo:TAB_IDLE_ALPHA duration:0.6];
+}
+
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
+    UITouch *t = [touches anyObject];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeOut) object:nil];
+    lastY = [t locationInView:self].y;
+    acc = 0;
+    [self setActive:YES];
+    [self fadeTo:1.0f duration:0.12];
+}
+
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
+    if (!active) return;
+    UITouch *t = [touches anyObject];
+    CGFloat y = [t locationInView:self].y;
+    acc += y - lastY;
+    lastY = y;
+    int steps = (int)(acc / TAB_STEP);
+    if (steps != 0) {
+        BOOL natural = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefNaturalScroll];
+        bluemote_sendf("W %d", natural ? steps : -steps);           /* same direction rule as the two-finger scroll: wheel + = up */
+        acc -= steps * TAB_STEP;
+    }
+}
+
+- (void)finish {
+    [self setActive:NO];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeOut) object:nil];
+    [self performSelector:@selector(fadeOut) withObject:nil afterDelay:0.7];     /* stays lit for a moment, then fades */
+}
+
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event { [self finish]; }
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event { [self finish]; }
+
+- (void)dealloc {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    [super dealloc];
+}
+
+- (void)drawRect:(CGRect)rect {
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGRect pill = CGRectMake(6.0f, 3.0f, 28.0f, self.bounds.size.height - 8.0f);
+    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:pill cornerRadius:14.0f];
+
+    CGContextSaveGState(c);                                          /* soft shadow so the tab lifts off the metal */
+    CGContextSetShadowWithColor(c, CGSizeMake(0, 1.5f), 3.0f, [UIColor colorWithWhite:0.0f alpha:0.5f].CGColor);
+    [[UIColor colorWithWhite:0.6f alpha:1.0f] setFill];
+    [p fill];
+    CGContextRestoreGState(c);
+
+    CGContextSaveGState(c);                                          /* face: a sheen across the width, like a rounded metal bar */
+    [p addClip];
+    CGFloat comps[12] = { 0.72f, 0.73f, 0.77f, 1.0f,  0.99f, 0.99f, 1.00f, 1.0f,  0.70f, 0.71f, 0.75f, 1.0f };
+    CGFloat locs[3] = { 0.0f, 0.45f, 1.0f };
+    CGGradientRef g = CGGradientCreateWithColorComponents(cs, comps, locs, 3);
+    CGContextDrawLinearGradient(c, g, CGPointMake(pill.origin.x, 0), CGPointMake(CGRectGetMaxX(pill), 0), 0);
+    CGGradientRelease(g);
+    if (active) {                                                    /* pressed: a little darker */
+        [[UIColor colorWithWhite:0.0f alpha:0.14f] setFill];
+        CGContextFillRect(c, pill);
+    }
+    CGContextRestoreGState(c);
+    [[UIColor colorWithWhite:0.33f alpha:1.0f] setStroke];
+    [p setLineWidth:1.0f];
+    [p stroke];
+
+    CGFloat midX = CGRectGetMidX(pill), midY = CGRectGetMidY(pill);
+    for (int i = -3; i <= 3; i++) {                                  /* grip ridges: a dark groove with a light line under it */
+        CGFloat y = floorf(midY + i * 6.0f);
+        CGContextSetLineWidth(c, 1.0f);
+        CGContextSetRGBStrokeColor(c, 1, 1, 1, 0.85f);
+        CGContextMoveToPoint(c, midX - 7.0f, y + 1.0f);
+        CGContextAddLineToPoint(c, midX + 7.0f, y + 1.0f);
+        CGContextStrokePath(c);
+        CGContextSetRGBStrokeColor(c, 0.28f, 0.29f, 0.33f, 0.85f);
+        CGContextMoveToPoint(c, midX - 7.0f, y);
+        CGContextAddLineToPoint(c, midX + 7.0f, y);
+        CGContextStrokePath(c);
+    }
+    if (pill.size.height > 100.0f) {                                 /* small up / down arrows near the ends */
+        CGContextSetRGBFillColor(c, 0.28f, 0.29f, 0.33f, 0.8f);
+        CGFloat ty = pill.origin.y + 13.0f, by = CGRectGetMaxY(pill) - 13.0f;
+        CGContextBeginPath(c);
+        CGContextMoveToPoint(c, midX, ty - 3.5f);
+        CGContextAddLineToPoint(c, midX - 4.5f, ty + 2.5f);
+        CGContextAddLineToPoint(c, midX + 4.5f, ty + 2.5f);
+        CGContextClosePath(c);
+        CGContextMoveToPoint(c, midX, by + 3.5f);
+        CGContextAddLineToPoint(c, midX - 4.5f, by - 2.5f);
+        CGContextAddLineToPoint(c, midX + 4.5f, by - 2.5f);
+        CGContextClosePath(c);
+        CGContextFillPath(c);
+    }
+    CGColorSpaceRelease(cs);
+}
+
+@end
+
+/* ---------- joined Left / Right click key ---------- */
+
+/* One wide machined key split in the middle by a groove, like the click bar in mobile mouse apps: the left half is the
+   left click, the right half is the right click. Only the half under the finger dips; it fires when the finger lifts
+   inside that same half (sliding off, or across to the other half, cancels it). */
+
+@interface TrackpadClickKey : UIControl {
+    int downHalf;               /* -1 none, 0 left half pressed, 1 right half pressed */
+}
+@end
+
+@implementation TrackpadClickKey
+
+- (id)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        downHalf = -1;
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+        self.contentMode = UIViewContentModeRedraw;
+        self.multipleTouchEnabled = NO;
+    }
+    return self;
+}
+
+- (int)halfAt:(CGPoint)p {
+    if (p.x < 0 || p.y < 0 || p.x > self.bounds.size.width || p.y > self.bounds.size.height) return -1;
+    return (p.x < self.bounds.size.width * 0.5f) ? 0 : 1;
+}
+
+- (void)setDownHalf:(int)h {
+    if (h == downHalf) return;
+    downHalf = h;
+    [self setNeedsDisplay];
+}
+
+- (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    [self setDownHalf:[self halfAt:[touch locationInView:self]]];
+    return YES;
+}
+
+- (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    int h = [self halfAt:[touch locationInView:self]];
+    if (h != downHalf) [self setDownHalf:-1];                       /* slid off the pressed half: cancel */
+    return YES;
+}
+
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    int h = downHalf;
+    [self setDownHalf:-1];
+    if (h == 0) bluemote_send("CLICK 1");                           /* left click */
+    else if (h == 1) bluemote_send("CLICK 2");                      /* right click */
+}
+
+- (void)cancelTrackingWithEvent:(UIEvent *)event {
+    [self setDownHalf:-1];
+}
+
+- (void)drawRect:(CGRect)rect {
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGRect wall, face, faceDown, dummy;
+    BTKeyFrames(self.bounds, &wall, &face, NO);
+    BTKeyFrames(self.bounds, &dummy, &faceDown, YES);
+    CGFloat midX = CGRectGetMidX(face);
+
+    BTKeyDrawWall(c, cs, wall, NO);
+    BTKeyDrawFace(c, cs, face, NO, NO);
+
+    /* the pressed half is redrawn dished, clipped to its own side of the key */
+    if (downHalf >= 0) {
+        CGContextSaveGState(c);
+        CGRect half = (downHalf == 0)
+            ? CGRectMake(face.origin.x - 2.0f, face.origin.y - 2.0f, midX - face.origin.x + 2.0f, face.size.height + 6.0f)
+            : CGRectMake(midX, face.origin.y - 2.0f, CGRectGetMaxX(face) - midX + 2.0f, face.size.height + 6.0f);
+        CGContextClipToRect(c, half);
+        BTKeyDrawFace(c, cs, faceDown, YES, NO);
+        CGContextRestoreGState(c);
+    }
+
+    /* groove down the middle: dark line with a light line beside it, running the full height of the face */
+    CGContextSaveGState(c);
+    UIBezierPath *shape = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(face, 0.5f, 0.5f) cornerRadius:BTKeyRadius(face)];
+    [shape addClip];
+    CGFloat gx = floorf(midX);
+    [[UIColor colorWithWhite:0.30f alpha:0.85f] setFill];
+    CGContextFillRect(c, CGRectMake(gx - 0.5f, face.origin.y, 1.0f, face.size.height));
+    [[UIColor colorWithWhite:1.0f alpha:0.75f] setFill];
+    CGContextFillRect(c, CGRectMake(gx + 0.5f, face.origin.y, 1.0f, face.size.height));
+    CGContextRestoreGState(c);
+
+    CGColorSpaceRelease(cs);
+}
+
+@end
+
+/* ---------- icon keys (Back / Home) ---------- */
+
+/* A normal machined key with an engraved glyph drawn on its face instead of a text label.
+   Back = the same bold chevron the keyboard drop-down button uses, turned to point left. */
+
+@interface TrackpadIconKey : BTKeyButton {
+    int kind;                   /* 0 = back chevron, 1 = home */
+}
++ (TrackpadIconKey *)keyWithKind:(int)kind target:(id)target action:(SEL)action;
+@end
+
+@implementation TrackpadIconKey
+
++ (TrackpadIconKey *)keyWithKind:(int)k target:(id)target action:(SEL)action {
+    TrackpadIconKey *b = [TrackpadIconKey buttonWithType:UIButtonTypeCustom];
+    b->kind = k;
+    b.backgroundColor = [UIColor clearColor];
+    b.opaque = NO;
+    b.contentMode = UIViewContentModeRedraw;
+    b.adjustsImageWhenHighlighted = NO;
+    if (target) [b addTarget:target action:action forControlEvents:UIControlEventTouchUpInside];
+    return b;
+}
+
+static void TPDrawGlyph(CGContextRef c, CGPoint ctr, int kind, UIColor *color) {
+    CGContextSaveGState(c);
+    [color setFill];
+    [color setStroke];
+    if (kind == 0) {
+        /* bold chevron with round ends, pointing left */
+        UIBezierPath *p = [UIBezierPath bezierPath];
+        [p moveToPoint:CGPointMake(ctr.x + 5.0f, ctr.y - 10.0f)];
+        [p addLineToPoint:CGPointMake(ctr.x - 5.0f, ctr.y)];
+        [p addLineToPoint:CGPointMake(ctr.x + 5.0f, ctr.y + 10.0f)];
+        [p setLineWidth:5.5f];
+        [p setLineCapStyle:kCGLineCapRound];
+        [p setLineJoinStyle:kCGLineJoinRound];
+        [p stroke];
+    } else {
+        /* house: roof, body and a door cut out of the body */
+        UIBezierPath *roof = [UIBezierPath bezierPath];
+        [roof moveToPoint:CGPointMake(ctr.x, ctr.y - 11.0f)];
+        [roof addLineToPoint:CGPointMake(ctr.x + 12.5f, ctr.y - 0.5f)];
+        [roof addLineToPoint:CGPointMake(ctr.x - 12.5f, ctr.y - 0.5f)];
+        [roof closePath];
+        [roof setLineWidth:2.0f];
+        [roof setLineJoinStyle:kCGLineJoinRound];
+        [roof fill];
+        [roof stroke];
+        UIBezierPath *body = [UIBezierPath bezierPathWithRect:CGRectMake(ctr.x - 8.0f, ctr.y - 1.0f, 16.0f, 11.5f)];
+        [body appendPath:[UIBezierPath bezierPathWithRect:CGRectMake(ctr.x - 2.5f, ctr.y + 4.0f, 5.0f, 6.5f)]];
+        body.usesEvenOddFillRule = YES;
+        [body fill];
+    }
+    CGContextRestoreGState(c);
+}
+
+- (void)drawRect:(CGRect)rect {
+    [super drawRect:rect];                                          /* the key itself: face, rim, shadow, pressed dish */
+    CGContextRef c = UIGraphicsGetCurrentContext();
+    CGRect wall, face;
+    BTKeyFrames(self.bounds, &wall, &face, self.highlighted);
+    CGPoint ctr = CGPointMake(CGRectGetMidX(face), CGRectGetMidY(face));
+    TPDrawGlyph(c, CGPointMake(ctr.x, ctr.y + 1.0f), kind, [UIColor colorWithWhite:1.0f alpha:0.85f]);    /* engraved: light edge below */
+    TPDrawGlyph(c, ctr, kind, [UIColor colorWithWhite:0.26f alpha:1.0f]);
+}
+
+@end
+
 /* ---------- page container ---------- */
 
 @implementation TrackpadView
@@ -204,14 +521,16 @@
         [infoB addTarget:self action:@selector(infoTapped) forControlEvents:UIControlEventTouchUpInside];
         [surface addSubview:infoB];
 
-        leftB = BTMakeKeyButton(@"Left", self, @selector(leftTapped));
-        rightB = BTMakeKeyButton(@"Right", self, @selector(rightTapped));
-        backB = BTMakeKeyButton(@"Back", self, @selector(backTapped));
-        homeB = BTMakeKeyButton(@"Home", self, @selector(homeTapped));
-        [self addSubview:leftB];
-        [self addSubview:rightB];
+        clickKey = [[TrackpadClickKey alloc] initWithFrame:CGRectZero];         /* joined Left | Right click key */
+        backB = [TrackpadIconKey keyWithKind:0 target:self action:@selector(backTapped)];
+        homeB = [TrackpadIconKey keyWithKind:1 target:self action:@selector(homeTapped)];
+        [self addSubview:clickKey];
+        [clickKey release];
         [self addSubview:backB];
         [self addSubview:homeB];
+        scrollTab = [[TrackpadScrollTab alloc] initWithFrame:CGRectZero];       /* above the pad, along its left edge */
+        [self addSubview:scrollTab];
+        [scrollTab release];
         [self reloadSettings];
     }
     return self;
@@ -221,6 +540,10 @@
     BOOL show = BTInfoButtonEnabled();
     infoB.hidden = !show;
     if (!show && helpOn) { helpOn = NO; [surface setShowHelp:NO]; }
+    BOOL tabOn = BTScrollTabEnabled();                              /* Settings > Trackpad > Scroll tab */
+    scrollTab.hidden = !tabOn;
+    [surface setTabHelp:tabOn];
+    [self setNeedsLayout];
 }
 
 /* Unibody: one brushed-aluminium block for the whole page. The pad and the key row are separate sections etched into it. */
@@ -237,13 +560,20 @@
 
     surface.frame = CGRectMake(inner.origin.x, inner.origin.y, inner.size.width, box.origin.y - gap - inner.origin.y);
     infoB.frame = CGRectMake(6, 6, 30, 30);
+    CGRect sf = surface.frame;                                      /* scroll tab: left edge, below the "i" button, clear of the corners */
+    CGFloat tabH = sf.size.height - 44.0f - 10.0f;
+    scrollTab.frame = CGRectMake(sf.origin.x + 2.0f, sf.origin.y + 44.0f, 40.0f, MAX(tabH, 0.0f));
+    if (tabH < 70.0f) scrollTab.hidden = YES;
+    else scrollTab.hidden = !BTScrollTabEnabled();
     CGFloat kgap = 8.0f;
-    CGFloat bw = (box.size.width - 2 * kpad - 3 * kgap) / 4.0f;
+    CGFloat avail = box.size.width - 2 * kpad - 2 * kgap;
+    CGFloat iw = floorf(avail * 0.20f);                             /* small icon keys, the click key takes the rest */
+    CGFloat cw = avail - 2 * iw;
     CGFloat y = box.origin.y + kpad;
-    UIView *keys[4] = { backB, leftB, rightB, homeB };              /* Back far left, the two click keys in the centre */
-    for (int i = 0; i < 4; i++) {
-        keys[i].frame = CGRectMake(box.origin.x + kpad + i * (bw + kgap), y, bw, bh);
-    }
+    CGFloat x = box.origin.x + kpad;
+    backB.frame = CGRectMake(x, y, iw, bh);                          /* Back far left, long joined click key in the centre, Home far right */
+    clickKey.frame = CGRectMake(x + iw + kgap, y, cw, bh);
+    homeB.frame = CGRectMake(x + iw + kgap + cw + kgap, y, iw, bh);
     [surface setNeedsDisplay];
 }
 
@@ -258,8 +588,6 @@
     [surface setShowHelp:helpOn];
 }
 
-- (void)leftTapped  { bluemote_send("CLICK 1"); }
-- (void)rightTapped { bluemote_send("CLICK 2"); }
 - (void)backTapped  { bluemote_send("MEDIA back"); }
 - (void)homeTapped  { bluemote_send("MEDIA home"); }
 

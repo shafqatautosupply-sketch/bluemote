@@ -14,10 +14,10 @@
     UIView *remoteBody;
     UIButton *infoB;
     BOOL expanded;          /* the saved choice (persisted): YES = remote minimized to Back / Home / Menu, pad grown */
-    CGFloat collapseT;      /* 0 = full remote ... 1 = minimized; animated per display frame */
-    CADisplayLink *animLink;
-    CFTimeInterval animStart, animDur;
-    CGFloat animFrom, animTo;
+    CGFloat collapseT;      /* 0 = full remote, 1 = minimized (the final state; the move itself is a Core Animation) */
+    BOOL collapseAnimating; /* a minimize / maximize move is running */
+    BOOL skipAlpha;         /* set while that move lays out, so the extra keys are faded by their own, separate animation */
+    int animGen;            /* bumped for every move, so an interrupted move's completion is ignored */
     RemoteRocker *volR;
     RemoteRocker *chR;
     RemoteButton *padB;     /* D-pad / trackpad switch, bottom-right of the remote */

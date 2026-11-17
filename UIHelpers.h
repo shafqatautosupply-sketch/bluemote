@@ -46,7 +46,9 @@ void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, B
 
 @interface BTKeyButton : UIButton {
     BOOL toggled;
+    CGFloat radiusScale;                                                                          /* 0 = default (1.0) */
 }
+- (void)setRadiusScale:(CGFloat)s;                                                               /* <1 = squarer corners */
 - (void)setToggled:(BOOL)t;                                                                      /* anodised blue when on */
 @end
 UIButton *BTMakeKeyButton(NSString *title, id target, SEL action);
