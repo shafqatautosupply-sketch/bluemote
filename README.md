@@ -3,11 +3,8 @@
 Turn a jailbroken iPhone into a **Bluetooth trackpad, keyboard and TV remote**. The iPhone pairs with a TV, tablet or
 computer the same way a real Bluetooth keyboard does, so no companion app is needed on the other side.
 
-<p align="center">
-  <img src="docs/images/icon.png" width="160" alt="Bluemote icon">
-</p>
-
-* **Trackpad**: move, tap, right-click, two-finger scroll in any direction, tap-and-drag.
+* **Trackpad**: move, tap, right-click, two-finger scroll in any direction, tap-and-drag, plus an optional **scroll tab**
+  along the left edge for one-finger scrolling.
 * **Media remote**: D-pad with a real **OK / Select** key (tap = click, hold = long press), volume and channel rockers,
   Back / Home / Menu, transport keys, Mute, and a *Reels / Shorts* mode.
 * **Keyboard**: the iOS keyboard plus Esc, Tab, arrows, F-keys, one-shot Ctrl / Shift / Alt / Win, and **Paste** (types
@@ -78,20 +75,13 @@ Details and the PIN fallback for older TVs: [docs/PAIRING.md](docs/PAIRING.md).
 
 | Where | What |
 | --- | --- |
-| Trackpad | drag = move, tap = click, two-finger tap = right click / Back, two-finger drag = scroll, tap then drag = drag & drop |
+| Trackpad | drag = move, tap = click, two-finger tap = right click / Back, two-finger drag = scroll, tap then drag = drag & drop, drag along the left-edge **scroll tab** = scroll |
 | Media, D-pad | tap an arrow (hold to repeat), centre = **OK** (hold = long press), roll your thumb across the ring to change direction |
 | Media, gesture pad | swipe = arrows, tap = OK, hold = Back, two-finger tap = play / pause, two-finger drag up / down = volume, two-finger swipe left / right = previous / next, two-finger hold = Home, three-finger tap = mute |
-| Keyboard | iOS keyboard, extra keys, **Paste** types the clipboard (about 35 to 40 characters per second) |
+| Keyboard | iOS keyboard, extra keys (arrows, Esc, Tab, Insert, Delete, PgUp / PgDn, Home / End, PrintScrn, F1 to F12), **Paste** types the clipboard (about 35 to 40 characters per second) |
 
 **Settings > Media remote:** media pad (D-pad or trackpad), **OK button** (*Select* = a real remote's OK, picks the highlighted
-Gboard suggestion; *Enter* = keyboard Enter, fallback), Reels method and direction. Natural scrolling is under *Trackpad*.
-
-### Screens
-
-The trackpad, media pad and D-pad backdrop share one vertically brushed aluminium slab. This is a render of that drawing
-code (left: slab, right: with a mock D-pad ring), not a device screenshot:
-
-<p align="center"><img src="docs/images/slab-preview.png" width="520" alt="Brushed aluminium slab preview"></p>
+Gboard suggestion; *Enter* = keyboard Enter, fallback), Reels method and direction. Natural scrolling and the **Scroll tab** switch are under *Trackpad*.
 
 ## Project layout
 
@@ -107,14 +97,14 @@ code (left: slab, right: with a mock D-pad ring), not a device screenshot:
 ├── MainViewController.*      main screen, title bar, PIN / passkey prompt
 ├── TrackpadView.*            trackpad
 ├── MediaView.*               media remote: D-pad, rockers, gesture pad
-├── KeyboardView.*            on-screen keyboard extras and Paste
+├── KeyboardView.*            on-screen keyboard extras (arrows, F-keys) and Paste
 ├── SettingsViewController.*  settings
 ├── PairViewController.*      pairing and devices
 ├── UIHelpers.*               iOS 6 skin: glossy buttons, brushed aluminium slab, helpers
 ├── bluemote_core.*           Bluetooth HID device: commands, pairing, key / mouse / consumer reports
 ├── btstack/                  BTstack v1.2 subset, built from source (client library + iOS daemon)
 ├── tools/                    make_icon.py (icon generator), preview_slab.py (off-device slab preview)
-└── docs/                     PAIRING.md, DEVELOPER_NOTES.txt, images
+└── docs/                     PAIRING.md, DEVELOPER_NOTES.txt
 ```
 
 The app talks to the daemon over a unix socket (`/tmp/Bluemote`); the UI sends one-line text commands to the core
@@ -140,6 +130,8 @@ More history and low-level notes: [docs/DEVELOPER_NOTES.txt](docs/DEVELOPER_NOTE
 
 ## Credits and licence
 
+* **Author:** Daniyal ([shafqatautosupply-sketch/bluemote](https://github.com/shafqatautosupply-sketch/bluemote)). The app's *Settings > About* shows the same.
+* **Bluetooth stack:** [BTstack](https://github.com/bluekitchen/btstack) by BlueKitchen GmbH, included as a trimmed v1.2 copy in `btstack/`. Thanks to the BTstack authors.
 * **Bluemote's own code** (everything outside `btstack/`) is MIT licensed, see [LICENSE](LICENSE).
 * **`btstack/`** is a trimmed copy of [BTstack](https://github.com/bluekitchen/btstack) v1.2 by BlueKitchen GmbH and is **not**
   MIT. It is free for **non-commercial / personal use only**; commercial use needs a licence from BlueKitchen (see the

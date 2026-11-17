@@ -1,5 +1,22 @@
 # Changelog
 
+## 7.5.0
+- **Keyboard sheet: bigger keys, cleaner look.** The hint line under the keys ("Type with the iOS keyboard. Ctrl / Win / Alt / Shift
+  apply to the next key.") is gone and its space now goes to the keys: the key section is 195 pt tall (was 178), rows are 40 pt
+  (were 36) and the border is wider (10 pt sides, 11 pt top, 6 pt bottom; the key frame adds ~5 pt of shadow room under the face).
+- **Paste progress and error messages removed** from the keyboard sheet (the status label is gone). Paste and Stop paste work as
+  before; a failed paste (not connected, empty clipboard, nothing typeable, busy) now does nothing silently, and the top bar still
+  updates when a paste ends.
+- **Arrow keys match.** Up / Down / Left / Right are one triangle drawn four ways (`KBArrowImage`) instead of different unicode glyphs,
+  so all four have the same size and thickness.
+- **"Print Screen" key renamed "PrintScrn"** so the label fits the key.
+- **Slightly squarer keys in the keyboard view.** New `BTKeyButton setRadiusScale:`; the keyboard sheet uses 0.8 of the normal corner
+  radius. Other pages keep the default.
+- **Scroll tab** on the trackpad: a strip along the left edge, nearly invisible until touched, then a finger dragging along it sends
+  wheel scrolling. *Settings > Trackpad > Scroll tab* turns it on or off (on by default; `BTScrollTabEnabled`, `kPrefScrollTab`).
+- **About section** in Settings: version, developer (Daniyal), a link to the GitHub repo, and a credit link to BTstack by BlueKitchen GmbH.
+- Docs: removed the README links to `docs/images/icon.png` and `docs/images/slab-preview.png` (the files are no longer in the repo).
+
 ## 7.4.0
 - **Softer keys.** Every key (keyboard sheet, trackpad Left / Right / Back / Home, media remote, VOL / CH rockers) now has a corner
   radius that follows its size (`BTKeyRadius`, about 42% of the short side), a thinner side wall, a domed face (sheen on top, a

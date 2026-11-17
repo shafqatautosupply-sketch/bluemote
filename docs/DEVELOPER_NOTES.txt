@@ -1,5 +1,20 @@
-Bluemote v7.3 - standalone (BTstack v1.2 inside)
+Bluemote v7.5 - standalone (BTstack v1.2 inside)
 ==============================================
+
+KEYBOARD SHEET (v7.5)
+  KeyboardView.m lays the key section out in layoutSubviews / layoutRows:width:height: - pane 195 pt tall, 4 rows that fill it (40 pt),
+  borders 10 pt sides / 11 pt top / 6 pt bottom. A key's frame (BTKeyFrames in UIHelpers.m) leaves 1 pt above and ~4 pt + BT_KEY_DEPTH
+  below the face for the shadow, so the bottom border is smaller than the top one to look even. There is no status label any more:
+  no hint line, no paste progress, no error text (togglePaste simply returns on failure; pasteTick only refreshes the top bar when a
+  paste ends via BTPasteStateNotification).
+  Arrow keys are images (KBArrowImage): one triangle rotated for up / right / down / left, so all four match. The F-key page uses
+  the same layout code. Label "PrintScrn" is HID usage 0x46.
+  Corner radius: BTKeyButton setRadiusScale: (0 = default 1.0). KeyboardView uses KB_RADIUS_SCALE 0.8. It works through a file-static
+  scale (gKeyRadiusScale) that BTKeyButton drawRect: sets around BTKeyDrawWall / BTKeyDrawFace, so BTKeyRadius() stays the one place
+  that decides the radius. MediaView still calls BTKeyRadius with the default.
+  About (SettingsViewController.m, SecAbout): version from Info.plist, developer name, GitHub repo link, BTstack credit link.
+  Scroll tab (TrackpadView.m, TrackpadScrollTab): left-edge strip, TAB_STEP = 7 pt per wheel step, Settings switch kPrefScrollTab
+  (default on) read through BTScrollTabEnabled() in UIHelpers.h.
 
 OK BUTTON (v7.3) - like a real TV remote
   OK used to send keyboard Enter, so with Gboard open it committed the text instead of picking the highlighted suggestion.

@@ -2,7 +2,7 @@
 #import "PairViewController.h"
 #import "UIHelpers.h"
 
-enum { SecBluetooth = 0, SecMedia = 1, SecTrackpad = 2, SecInterface = 3 };
+enum { SecBluetooth = 0, SecMedia = 1, SecTrackpad = 2, SecInterface = 3, SecAbout = 4 };
 enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScrollTab = 7 };
 
 @implementation SettingsViewController
@@ -22,12 +22,13 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScroll
     [self.tableView reloadData];                  /* the device count may have changed */
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 4; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 5; }
 
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)section {
     if (section == SecBluetooth) return 1;
     if (section == SecMedia) return 2;
     if (section == SecTrackpad) return 2;                       /* natural scrolling, scroll tab */
+    if (section == SecAbout) return 4;                          /* version, developer, source code, BTstack credit */
     return 1;
 }
 
@@ -35,6 +36,7 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScroll
     if (section == SecBluetooth) return @"Bluetooth";
     if (section == SecMedia) return @"Media remote";
     if (section == SecTrackpad) return @"Trackpad";
+    if (section == SecAbout) return @"About";
     return @"Interface";
 }
 
@@ -43,6 +45,8 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScroll
         return @"OK button: Select works like a real TV remote (picks the highlighted keyboard suggestion); use Enter only if your TV ignores Select.";
     if (section == SecTrackpad)
         return @"Scroll tab: a strip along the left edge of the trackpad. Drag it up or down to scroll; it fades out when not touched.";
+    if (section == SecAbout)
+        return @"Bluemote is free software (MIT), made by Daniyal. Bluetooth stack: BTstack by BlueKitchen GmbH.";
     return nil;
 }
 
@@ -69,7 +73,9 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScroll
     NSString *ident = [NSString stringWithFormat:@"s%d_%d", (int)ip.section, (int)ip.row];
     UITableViewCell *cell = [tv dequeueReusableCellWithIdentifier:ident];
     if (!cell) {
-        UITableViewCellStyle st = (ip.section == SecBluetooth) ? UITableViewCellStyleSubtitle : UITableViewCellStyleDefault;
+        UITableViewCellStyle st = (ip.section == SecBluetooth) ? UITableViewCellStyleSubtitle
+                                : (ip.section == SecAbout)     ? UITableViewCellStyleValue1
+                                : UITableViewCellStyleDefault;
         cell = [[[UITableViewCell alloc] initWithStyle:st reuseIdentifier:ident] autorelease];
     }
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
@@ -94,6 +100,19 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScroll
             cell.accessoryView = [self segmentWithItems:[NSArray arrayWithObjects:@"Select", @"Enter", nil]
                                                selected:[d integerForKey:kPrefOkMode] tag:TagOkMode width:170];
         }
+    } else if (ip.section == SecAbout) {
+        if (ip.row == 0) {
+            cell.textLabel.text = @"Version";
+            cell.detailTextLabel.text = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"];
+        } else if (ip.row == 1) {
+            cell.textLabel.text = @"Developer";
+            cell.detailTextLabel.text = @"Daniyal";
+        } else {
+            cell.textLabel.text = (ip.row == 2) ? @"Source code" : @"Bluetooth stack";
+            cell.detailTextLabel.text = (ip.row == 2) ? @"GitHub" : @"BTstack";
+            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
     } else if (ip.section == SecInterface) {
         cell.textLabel.text = @"Show info (i) button";
         cell.accessoryView = [self switchOn:BTInfoButtonEnabled() tag:TagShowInfo];
@@ -109,6 +128,11 @@ enum { TagPadMode = 1, TagNatural = 4, TagOkMode = 5, TagShowInfo = 6, TagScroll
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.section == SecAbout) {
+        NSString *u = (ip.row == 2) ? @"https://github.com/shafqatautosupply-sketch/bluemote" : ((ip.row == 3) ? @"https://github.com/bluekitchen/btstack" : nil);
+        if (u) [[UIApplication sharedApplication] openURL:[NSURL URLWithString:u]];
+        return;
+    }
     if (ip.section == SecBluetooth) {
         PairViewController *p = [[PairViewController alloc] init];
         [self.navigationController pushViewController:p animated:YES];
