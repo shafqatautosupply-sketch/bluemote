@@ -356,10 +356,9 @@ void BTKeyFrames(CGRect bounds, CGRect *wall, CGRect *face, BOOL down) {
 }
 
 /* corner radius follows the key: about 42% of the short side (a soft, almost pill shape), never more than BT_KEY_RADIUS */
-static CGFloat gKeyRadiusScale = 1.0f;   /* set by a key while it draws, so one view can use slightly squarer keys */
 CGFloat BTKeyRadius(CGRect r) {
     CGFloat m = MIN(r.size.width, r.size.height);
-    return MIN(BT_KEY_RADIUS, floorf(m * 0.42f * gKeyRadiusScale));
+    return MIN(BT_KEY_RADIUS, floorf(m * 0.42f));
 }
 
 void BTKeyDrawWall(CGContextRef c, CGColorSpaceRef cs, CGRect wall, BOOL blue) {
@@ -433,11 +432,6 @@ void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, B
     self.imageEdgeInsets = in;
 }
 
-- (void)setRadiusScale:(CGFloat)s {
-    radiusScale = s;
-    [self setNeedsDisplay];
-}
-
 - (void)setToggled:(BOOL)t {
     toggled = t;
     [self applyLook];
@@ -456,10 +450,8 @@ void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, B
     BOOL down = self.highlighted;
     CGRect wall, face;
     BTKeyFrames(self.bounds, &wall, &face, down);
-    gKeyRadiusScale = (radiusScale > 0.0f) ? radiusScale : 1.0f;
     BTKeyDrawWall(c, cs, wall, toggled);
     BTKeyDrawFace(c, cs, face, down, toggled);
-    gKeyRadiusScale = 1.0f;
     CGColorSpaceRelease(cs);
 }
 

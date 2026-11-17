@@ -46,9 +46,7 @@ void BTKeyDrawFace(CGContextRef c, CGColorSpaceRef cs, CGRect face, BOOL down, B
 
 @interface BTKeyButton : UIButton {
     BOOL toggled;
-    CGFloat radiusScale;                                                                          /* 0 = default (1.0) */
 }
-- (void)setRadiusScale:(CGFloat)s;                                                               /* <1 = squarer corners */
 - (void)setToggled:(BOOL)t;                                                                      /* anodised blue when on */
 @end
 UIButton *BTMakeKeyButton(NSString *title, id target, SEL action);
@@ -71,6 +69,12 @@ void BTSendOK(int phase);                                                       
 #define kPrefShowInfo       @"showInfoButton"    /* 1 (default) = show the small "i" help button on the pads */
 static inline BOOL BTInfoButtonEnabled(void) {
     NSNumber *n = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefShowInfo];
+    return n ? [n boolValue] : YES;
+}
+
+#define kPrefScrollTab      @"showScrollTab"     /* 1 (default) = scroll tab along the left edge of the main trackpad */
+static inline BOOL BTScrollTabEnabled(void) {
+    NSNumber *n = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefScrollTab];
     return n ? [n boolValue] : YES;
 }
 

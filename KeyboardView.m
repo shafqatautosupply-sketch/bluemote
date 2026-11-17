@@ -14,8 +14,7 @@ static const KeyDef kF3[] = { {"F9",0x42}, {"F10",0x43}, {"F11",0x44}, {"F12",0x
 static const KeyDef kF4[] = { {"Home",0x4a}, {"Print Screen",0x46}, {"End",0x4d} };
 
 #define PASTE_MAX_CHARS 300000
-#define DEFAULT_STATUS @""                 /* no hint text under the keys; the label only shows paste progress / errors */
-#define KB_RADIUS_SCALE 0.8f               /* keys a little squarer than the app default */
+#define DEFAULT_STATUS @"Type with the iOS keyboard. Ctrl / Win / Alt / Shift apply to the next key."
 
 /* Converts clipboard text to plain ASCII the keyboard can type. Counts what had to be skipped. */
 static void BTAppendStr(NSMutableData *d, const char *s) {
@@ -90,7 +89,6 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (UIButton *)keyButton:(const KeyDef *)def {
     UIButton *b = BTMakeKeyButton([NSString stringWithUTF8String:def->title], nil, NULL);
     b.tag = def->usage;
-    [(BTKeyButton *)b setRadiusScale:KB_RADIUS_SCALE];
     [b addTarget:self action:@selector(keyDown:) forControlEvents:UIControlEventTouchDown];
     [b addTarget:self action:@selector(keyUp:)
         forControlEvents:(UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel)];
@@ -110,7 +108,6 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 - (UIButton *)modButton:(NSString *)title mask:(int)mask {
     UIButton *b = BTMakeKeyButton(title, self, @selector(modPressed:));
     b.tag = mask;                      /* tag == HID modifier bit */
-    [(BTKeyButton *)b setRadiusScale:KB_RADIUS_SCALE];
     return b;
 }
 
@@ -193,12 +190,9 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
 
 /* ---------------------------------------------------------------- layout */
 
-/* aluminium keys on an even grid: 10 pt border around the keys (12 pt at the bottom, where paste messages show),
-   8 pt between keys in a row, 6 pt between rows. Row height fills whatever height the pane has. */
-- (void)layoutRows:(NSArray *)rows width:(CGFloat)w height:(CGFloat)h {
-    CGFloat pad = 10.0f, padBottom = 12.0f, gap = 8.0f, vgap = 6.0f, y = pad;
-    int nrows = (int)[rows count];
-    CGFloat rowH = floorf((h - pad - padBottom - (nrows - 1) * vgap) / nrows);
+/* square-ish aluminium keys on an even grid: 8 pt around and between keys in a row, 6 pt between rows */
+- (void)layoutRows:(NSArray *)rows width:(CGFloat)w {
+    CGFloat pad = 8.0f, gap = 8.0f, vgap = 6.0f, rowH = 36.0f, y = pad;
     for (NSArray *row in rows) {
         int cnt = (int)[row count];
         CGFloat bw = (w - 2 * pad - (cnt - 1) * gap) / cnt;
@@ -214,14 +208,13 @@ static NSData *BTSanitize(NSString *s, int *skipped) {
     const CGFloat barH = 44.0f, side = 8.0f;
     backdrop.frame = self.bounds;
     topBar.frame = CGRectMake(0, 0, w, barH);
-    CGRect paneFrame = CGRectMake(side, barH + 4.0f, w - 2 * side, 195.0f);   /* the etched key section */
+    CGRect paneFrame = CGRectMake(side, barH + 4.0f, w - 2 * side, 178.0f);   /* the etched key section */
     [(KBBackdrop *)backdrop setPocket:paneFrame];
     arrowPane.frame = paneFrame;
     fkeyPane.frame = paneFrame;
-    [self layoutRows:arrowRows width:paneFrame.size.width height:paneFrame.size.height];
-    [self layoutRows:fkeyRows width:paneFrame.size.width height:paneFrame.size.height];
-    /* the label lives in the pane's bottom border and is empty unless a paste message is showing */
-    status.frame = CGRectMake(paneFrame.origin.x + 10, CGRectGetMaxY(paneFrame) - 14.0f, paneFrame.size.width - 20, 13);
+    [self layoutRows:arrowRows width:paneFrame.size.width];
+    [self layoutRows:fkeyRows width:paneFrame.size.width];
+    status.frame = CGRectMake(10, CGRectGetMaxY(paneFrame) + 3.0f, w - 20, 14);
 }
 
 - (void)showLayout:(int)index {
