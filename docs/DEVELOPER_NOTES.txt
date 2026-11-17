@@ -26,8 +26,8 @@ OK BUTTON (v7.3) - like a real TV remote
 LOOK (v7.2)
   Trackpad, Media gesture pad and the D-pad backdrop are one horizontally brushed aluminium slab (BTDrawPanel in UIHelpers.m:
   metal gradient with a sheen band, per-row grain, horizontal streaks, bevelled top, shaded lip, drop shadow). It is rendered
-  once per size and cached, so touches stay smooth. Icon: pre-rendered iOS 6 style (aluminium D-pad, glossy blue Bluetooth
-  jewel, domed gloss). Regenerate with  python3 tools/make_icon.py Resources   (needs pillow, numpy, scipy);
+  once per size and cached, so touches stay smooth. Icon (from v7.5): rendered artwork in tools/icon_source.jpg, cut to a rounded
+  square and shrunk by  python3 tools/export_icon.py Resources   (pillow only). Older versions drew it with tools/make_icon.py (numpy, scipy);
   tools/preview_slab.py renders the slab off-device.
 
 AUTOMATIC PAIRING (v7.1) - no passcode, like a real Bluetooth keyboard

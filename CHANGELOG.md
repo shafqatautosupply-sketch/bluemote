@@ -15,6 +15,9 @@
 - **Scroll tab** on the trackpad: a strip along the left edge, nearly invisible until touched, then a finger dragging along it sends
   wheel scrolling. *Settings > Trackpad > Scroll tab* turns it on or off (on by default; `BTScrollTabEnabled`, `kPrefScrollTab`).
 - **About section** in Settings: version, developer (Daniyal), a link to the GitHub repo, and a credit link to BTstack by BlueKitchen GmbH.
+- **New app icon.** A dark graphite rounded square with a metallic bezel and gloss, a brushed aluminium D-pad ring with engraved
+  arrows, and a recessed centre button with a glowing cyan Bluetooth symbol. The icon is a rendered image (`tools/icon_source.jpg`);
+  `tools/export_icon.py` crops it to the rounded square and writes the PNG sizes into `Resources/`.
 - Docs: removed the README links to `docs/images/icon.png` and `docs/images/slab-preview.png` (the files are no longer in the repo).
 
 ## 7.4.0

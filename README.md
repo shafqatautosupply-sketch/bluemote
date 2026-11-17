@@ -103,7 +103,7 @@ Gboard suggestion; *Enter* = keyboard Enter, fallback), Reels method and directi
 ├── UIHelpers.*               iOS 6 skin: glossy buttons, brushed aluminium slab, helpers
 ├── bluemote_core.*           Bluetooth HID device: commands, pairing, key / mouse / consumer reports
 ├── btstack/                  BTstack v1.2 subset, built from source (client library + iOS daemon)
-├── tools/                    make_icon.py (icon generator), preview_slab.py (off-device slab preview)
+├── tools/                    export_icon.py + icon_source.jpg (app icon), make_icon.py (older icon drawing), preview_slab.py (off-device slab preview)
 └── docs/                     PAIRING.md, DEVELOPER_NOTES.txt
 ```
 
@@ -113,7 +113,7 @@ The app talks to the daemon over a unix socket (`/tmp/Bluemote`); the UI sends o
 ## Tools
 
 ```sh
-python3 tools/make_icon.py Resources   # regenerate the four icon PNGs (needs pillow, numpy, scipy)
+python3 tools/export_icon.py Resources   # regenerate the icon PNGs from tools/icon_source.jpg (needs pillow)
 python3 tools/preview_slab.py out.png  # render the aluminium slab off-device
 ```
 
