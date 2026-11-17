@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+- **Only paired devices can connect, unless pairing mode is on.** Before, the iPhone was always discoverable and connectable,
+  accepted every incoming connection and silently paired with anybody ("Just Works"). Now, with pairing mode off:
+  - the iPhone is not discoverable (page scan only, so paired TVs can still reconnect);
+  - the daemon rejects connection requests from any device that is not paired, before L2CAP or pairing
+    (`gap_register_classic_connection_filter`), and refuses every new pairing, also from a listed device (the IO capability
+    is "unknown", so the stack answers with "pairing not allowed"). A TV that forgot the iPhone has to be re-paired through
+    **Pair new device**;
+  - the app declines incoming L2CAP channels from unknown devices, ignores new link keys and PIN / passkey requests;
+  - pairing mode **turns itself off after 2 minutes** (`PAIRING_TIMEOUT_MS`; tapping *Pair new device* again restarts the
+    2 minutes; if a PIN / passkey box is open the timeout waits 30 s and looks again). It also closes when a device paired,
+    when the app is closed (the daemon closes it when its last client goes away) and it is never on right after a start.
+  New daemon command `BTSTACK_SET_CONNECTION_FILTER` (0x0A, `btstack_set_connection_filter`): the app sends the list of paired
+  devices and the pairing mode flag; the daemon starts closed.
+- **"Last device" is now the last one that connected, not the last one that paired.** The saved list is ordered by last
+  connection: when a device connects it moves to the top, and *Reconnect to last* and the automatic reconnect at start use the
+  top entry. Pairing no longer moves a device to the top; a new device goes to the end of the list (when 8 devices are saved it
+  replaces the one that connected longest ago) and moves up as soon as it connects.
+- **Crash-safe key file.** The pairing keys are now written to `link_keys.bin.tmp`, fsynced (`F_FULLFSYNC` on iOS, plain `fsync`
+  as a fallback), renamed over `link_keys.bin`, and the folder is fsynced. A crash or power loss can no longer leave a truncated
+  key file that loses every pairing; if a write fails the old file stays as it was. The one-time migration of the old
+  `/var/mobile/bt_link_keys.bin` uses the same routine, so a half-copied file can no longer be mistaken for a complete one.
+- **No more half open connections.** HID needs the control and the interrupt channel. When the interrupt channel fails to open
+  (refused by the TV, link dropped, timeout) while the control channel is up, the app now closes the control channel
+  (`drop_half_open_link()`), so the next connect starts clean instead of being blocked by a dead channel. The status line keeps
+  "Connection to TV failed - try again" instead of being overwritten by the close.
+  When the interrupt channel never answers at all (no failure event comes), a 10 second timer
+  (`HALF_OPEN_TIMEOUT_MS`, started when the control channel opens, stopped when the interrupt channel opens or the control
+  channel closes) closes the control channel too ("Connection to TV incomplete - try again").
+- **Scroll tab reacts on the very edge of the screen.** The touch area was only the 40 pt tab, which starts about 14 pt inside the
+  screen (the pad sits inside the aluminium frame), so a thumb on the screen edge did nothing. The touch area now starts at the
+  left edge of the screen and reaches 8 pt past the right side of the tab (`TAB_HIT_RIGHT`); the drawn tab is unchanged.
+- The scan state (page / inquiry scan) is now owned by the stack too (`gap_connectable_control(1)` in the daemon), so the stack's
+  own scan updates no longer undo the app's setting.
+
 ## 7.5.0
 - **Keyboard sheet: bigger keys, cleaner look.** The hint line under the keys ("Type with the iOS keyboard. Ctrl / Win / Alt / Shift
   apply to the next key.") is gone and its space now goes to the keys: the key section is 195 pt tall (was 178), rows are 40 pt

@@ -46,6 +46,7 @@ static uint16_t hid_interrupt = 0;
 static uint16_t hid_handle = 0;               /* ACL handle of the HID link, 0 if none */
 static volatile int is_connected = 0;
 static int we_initiated = 0;
+static int half_open_dropped = 0;      /* we are closing a control channel whose interrupt channel failed (keeps the failure text on screen) */
 static uint8_t mouse_buttons = 0;
 static const char * volatile status_text = "Starting...";
 static volatile int bt_working = 0;
@@ -148,6 +149,7 @@ static void addr_to_str(const uint8_t *a, char *out) {
     snprintf(out, 20, "%02X:%02X:%02X:%02X:%02X:%02X", a[0], a[1], a[2], a[3], a[4], a[5]);
 }
 static volatile int pairing_mode = 0;
+static void filter_sync(void);      /* tell the daemon which devices are paired (defined with the pairing code below) */
 
 /* PIN / passkey entry requested by the TV: 0 none, 1 legacy PIN, 2 SSP passkey */
 static volatile int pin_request = 0;
@@ -181,17 +183,67 @@ static void keys_load(void) {
     keys_update_summary();
 }
 
+/* flush a file descriptor to stable storage. On iOS plain fsync() only reaches the drive's cache, so ask for F_FULLFSYNC first. */
+static int sync_fd(int fd) {
+#ifdef F_FULLFSYNC
+    if (fcntl(fd, F_FULLFSYNC) == 0) return 0;
+#endif
+    return fsync(fd);
+}
+
+/* make the directory entry (the rename) durable too */
+static void sync_parent_dir(const char *path) {
+    char dir[512];
+    snprintf(dir, sizeof(dir), "%s", path);
+    char *slash = strrchr(dir, '/');
+    if (!slash) return;
+    if (slash == dir) dir[1] = 0; else *slash = 0;
+    int dfd = open(dir, O_RDONLY);
+    if (dfd >= 0) {
+        sync_fd(dfd);
+        close(dfd);
+    }
+}
+
+/* Crash-safe replace of a file: write "<path>.tmp", fsync it, rename it over <path>, fsync the directory.
+   At every moment <path> is either the complete old file or the complete new file, never a truncated one.
+   On any error the old file is left untouched. Returns 0 on success, -1 on error. */
+static int write_file_atomic(const char *path, const void *data, size_t len) {
+    char tmp[560];
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) return -1;
+    const uint8_t *p = (const uint8_t *)data;
+    size_t left = len;
+    int ok = 1;
+    while (left > 0) {
+        ssize_t n = write(fd, p, left);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            ok = 0;
+            break;
+        }
+        p += n;
+        left -= (size_t)n;
+    }
+    if (ok && sync_fd(fd) != 0) ok = 0;
+    if (close(fd) != 0) ok = 0;
+    if (ok && rename(tmp, path) != 0) ok = 0;
+    if (!ok) {
+        unlink(tmp);
+        return -1;
+    }
+    sync_parent_dir(path);
+    return 0;
+}
+
 static void keys_save(void) {
     if (key_count == 0) {
         unlink(key_file_path);
+        sync_parent_dir(key_file_path);
         return;
     }
-    FILE *f = fopen(key_file_path, "wb");
-    if (f) {
-        chmod(key_file_path, 0600);
-        fwrite(keys, sizeof(stored_link_key_t), key_count, f);
-        fclose(f);
-    }
+    write_file_atomic(key_file_path, keys, sizeof(stored_link_key_t) * (size_t)key_count);
 }
 
 static int keys_find(const uint8_t *addr, uint8_t *key) {
@@ -204,6 +256,10 @@ static int keys_find(const uint8_t *addr, uint8_t *key) {
     return 0;
 }
 
+/* Store the link key of a device that just paired. The order of the list is "most recently CONNECTED first":
+   pairing does not move a device to the front (a connection does, see keys_touch), so reconnecting after a restart goes
+   to the last device that was really used, not to the last one that was paired. A new device goes to the end of the
+   list; when the list is full it replaces the last entry (the device that was connected longest ago). */
 static void keys_upsert(const uint8_t *addr, const uint8_t *key) {
     int idx = -1;
     for (int i = 0; i < key_count; i++) {
@@ -211,11 +267,25 @@ static void keys_upsert(const uint8_t *addr, const uint8_t *key) {
     }
     if (idx < 0) {
         if (key_count < MAX_KEYS) key_count++;
-        idx = key_count - 1;            /* overwrite the oldest when full */
+        idx = key_count - 1;
     }
+    memcpy(keys[idx].addr, addr, 6);
+    memcpy(keys[idx].link_key, key, 16);
+    keys_save();
+    keys_update_summary();
+    filter_sync();                      /* the daemon must let this device connect once pairing mode is closed */
+}
+
+/* A device connected: move it to the front, so "most recent" means last connected. */
+static void keys_touch(const uint8_t *addr) {
+    int idx = -1;
+    for (int i = 0; i < key_count; i++) {
+        if (memcmp(keys[i].addr, addr, 6) == 0) { idx = i; break; }
+    }
+    if (idx <= 0) return;               /* not saved, or already the first */
+    stored_link_key_t t = keys[idx];
     for (int i = idx; i > 0; i--) keys[i] = keys[i - 1];
-    memcpy(keys[0].addr, addr, 6);
-    memcpy(keys[0].link_key, key, 16);
+    keys[0] = t;
     keys_save();
     keys_update_summary();
 }
@@ -546,15 +616,86 @@ static void paste_slice(void) {
 
 static void cmd_disconnect_now(void);
 
+/* ---- who may connect ----
+   Only paired devices may connect unless pairing mode is on. Three layers:
+   1. the daemon rejects connection requests from unknown devices and refuses every new pairing while pairing mode is closed
+      (BTSTACK_SET_CONNECTION_FILTER),
+   2. the page scan / inquiry scan state follows pairing mode (closed: connectable by paired devices only, not discoverable),
+   3. this file declines incoming L2CAP channels from unknown devices and ignores link keys / PIN requests outside pairing mode. */
+
+static void filter_sync(void) {
+    static bd_addr_t none = { 0, 0, 0, 0, 0, 0 };
+    bt_send_cmd(&btstack_set_connection_filter, 0, 0, none);                    /* clear staging list */
+    for (int i = 0; i < key_count; i++)
+        bt_send_cmd(&btstack_set_connection_filter, 1, 0, keys[i].addr);       /* add every paired device */
+    bt_send_cmd(&btstack_set_connection_filter, 2, 0, none);                    /* commit */
+}
+
+/* page scan always (paired devices reconnect), inquiry scan (= discoverable) only while pairing mode is on */
+static void scan_apply(void) {
+    bt_send_cmd(&hci_write_scan_enable, pairing_mode ? 0x03 : 0x02);
+    bt_send_cmd(&btstack_set_discoverable, pairing_mode ? 1 : 0);
+}
+
+/* push the complete state to the daemon (start up, chip restart) */
+static void pairing_push(void) {
+    static bd_addr_t none = { 0, 0, 0, 0, 0, 0 };
+    filter_sync();
+    bt_send_cmd(&btstack_set_connection_filter, 3, pairing_mode ? 1 : 0, none);
+    scan_apply();
+}
+
+/* Pairing mode switches itself off after PAIRING_TIMEOUT_MS, so the phone is never left open to new devices by accident.
+   The timer runs on the Bluetooth thread, like everything that changes pairing_mode. */
+#define PAIRING_TIMEOUT_MS      120000     /* 2 minutes */
+#define PAIRING_PIN_GRACE_MS     30000     /* a PIN / passkey box is open: do not cut the person off, look again later */
+static btstack_timer_source_t pairing_timer;
+static void pairing_timeout_handler(btstack_timer_source_t *ts);
+
+static void pairing_timer_stop(void) {
+    btstack_run_loop_remove_timer(&pairing_timer);
+}
+
+static void pairing_timer_start(uint32_t ms) {
+    btstack_run_loop_remove_timer(&pairing_timer);
+    btstack_run_loop_set_timer_handler(&pairing_timer, &pairing_timeout_handler);
+    btstack_run_loop_set_timer(&pairing_timer, ms);
+    btstack_run_loop_add_timer(&pairing_timer);
+}
+
+/* force = tell the daemon even if the flag already has this value */
+static void pairing_set(int on, int force) {
+    static bd_addr_t none = { 0, 0, 0, 0, 0, 0 };
+    on = on ? 1 : 0;
+    if (pairing_mode == on && !force) return;
+    pairing_mode = on;
+    if (on) pairing_timer_start(PAIRING_TIMEOUT_MS);        /* (re)start the 2 minutes */
+    else    pairing_timer_stop();
+    bt_send_cmd(&btstack_set_connection_filter, 3, on, none);
+    scan_apply();
+}
+
+static void set_pairing_mode(int on) { pairing_set(on, 0); }
+
+static void pairing_timeout_handler(btstack_timer_source_t *ts) {
+    (void)ts;
+    if (!pairing_mode) return;
+    if (pin_request != 0) {                 /* the person is typing a PIN / passkey right now */
+        pairing_timer_start(PAIRING_PIN_GRACE_MS);
+        return;
+    }
+    set_pairing_mode(0);
+    status_text = is_connected ? "Connected" : "Pairing mode ended - tap Pair new device to try again";
+}
+
 static void cmd_pair(void) {
-    pairing_mode = 1;     /* during pairing mode we never hand out an old link key, so a TV that forgot us can re-pair */
-    status_text = "Pairing mode: on the TV add a Bluetooth device and pick this iPhone";
-    bt_send_cmd(&hci_write_scan_enable, 0x03);
-    bt_send_cmd(&btstack_set_discoverable, 1);
+    /* during pairing mode we never hand out an old link key, so a TV that forgot us can re-pair */
+    status_text = "Pairing mode (2 min): on the TV add a Bluetooth device and pick this iPhone";
+    pairing_set(1, 1);                  /* always tell the daemon, even if the flag was already on */
 }
 
 static void cmd_pair_stop(void) {
-    pairing_mode = 0;
+    set_pairing_mode(0);
     status_text = is_connected ? "Connected" : "Ready - waiting for TV";
 }
 
@@ -562,12 +703,13 @@ static void cmd_forget(void) {
     key_count = 0;
     keys_save();
     keys_update_summary();
-    pairing_mode = 0;
+    filter_sync();
+    set_pairing_mode(0);
     status_text = "Saved devices forgotten. Tap Pair new device.";
 }
 
 static void start_connect(void) {
-    pairing_mode = 0;
+    set_pairing_mode(0);
     we_initiated = 1;
     status_text = "Connecting...";
     bt_send_cmd(&l2cap_create_channel_cmd, target_addr, BLUETOOTH_PSM_HID_CONTROL, 48);
@@ -599,6 +741,7 @@ static void cmd_forget_dev(int idx) {
     key_count--;
     keys_save();
     keys_update_summary();
+    filter_sync();
     status_text = "Device forgotten";
     if (was_connected) cmd_disconnect_now();
 }
@@ -624,6 +767,45 @@ static void cmd_disconnect_now(void) {
 #else
     status_text = "Disconnect not available in this build";
 #endif
+}
+
+/* HID needs both channels. If the interrupt channel could not be opened while the control channel is up (the TV refused it,
+   the link dropped, a timeout), the control channel is a half open connection: nothing can be sent over it, it blocks the
+   next connect and the status would never change. Close it; L2CAP_EVENT_CHANNEL_CLOSED then resets the state. */
+static void drop_half_open_link(void) {
+#ifndef BLUEMOTE_NO_L2CAP_DISCONNECT
+    if (hid_control && !hid_interrupt) {
+        half_open_dropped = 1;
+        bt_send_cmd(&l2cap_disconnect_cmd, hid_control, 0);
+    }
+#endif
+}
+
+/* If a device opens (or we open) the control channel but the interrupt channel does not follow, no failure event ever comes
+   (nothing was refused, the other side just stopped). Give the interrupt channel HALF_OPEN_TIMEOUT_MS, then close the control
+   channel. Started when the control channel opens, stopped when the interrupt channel opens or the control channel closes. */
+#define HALF_OPEN_TIMEOUT_MS 10000
+static btstack_timer_source_t half_open_timer;
+
+static void half_open_timeout_handler(btstack_timer_source_t *ts) {
+    (void)ts;
+#ifndef BLUEMOTE_NO_L2CAP_DISCONNECT
+    if (hid_control && !hid_interrupt) {
+        status_text = "Connection to TV incomplete - try again";
+        drop_half_open_link();
+    }
+#endif
+}
+
+static void half_open_timer_stop(void) {
+    btstack_run_loop_remove_timer(&half_open_timer);
+}
+
+static void half_open_timer_start(void) {
+    btstack_run_loop_remove_timer(&half_open_timer);
+    btstack_run_loop_set_timer_handler(&half_open_timer, &half_open_timeout_handler);
+    btstack_run_loop_set_timer(&half_open_timer, HALF_OPEN_TIMEOUT_MS);
+    btstack_run_loop_add_timer(&half_open_timer);
 }
 
 static void cmd_pin(const char *text) {
@@ -872,6 +1054,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
     uint16_t psm;
     uint16_t local_cid;
     uint8_t stored_key[16];
+    uint8_t link_key_tmp[16];
 
     switch (packet_type) {
         case L2CAP_DATA_PACKET:
@@ -899,8 +1082,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     bt_send_cmd(&hci_write_class_of_device, 0x0025C0);
                     /* Secure Simple Pairing is enabled by the daemon during chip init (daemon.c); Just Works by default */
                     bt_send_cmd(&btstack_set_ssp_iocap, io_capability);
-                    bt_send_cmd(&hci_write_scan_enable, 0x03);
-                    bt_send_cmd(&btstack_set_discoverable, 1);
+                    pairing_mode = 0;                 /* pairing mode never survives a (re)start: only paired devices may connect */
+                    pairing_timer_stop();
+                    pairing_push();
                     if (!sdp_registered) {            /* the daemon keeps the record until we disconnect: register it once */
                         bt_send_cmd(&sdp_register_service_record_cmd, hid_device_sdp_service_record);
                         sdp_registered = 1;
@@ -914,7 +1098,13 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                 case L2CAP_EVENT_INCOMING_CONNECTION:
                     local_cid = l2cap_event_incoming_connection_get_local_cid(packet);
-                    bt_send_cmd(&l2cap_accept_connection_cmd, local_cid);
+                    l2cap_event_incoming_connection_get_address(packet, event_addr);
+                    /* only paired devices, unless pairing mode is on */
+                    if (pairing_mode || keys_find(event_addr, stored_key)) {
+                        bt_send_cmd(&l2cap_accept_connection_cmd, local_cid);
+                    } else {
+                        bt_send_cmd(&l2cap_decline_connection_cmd, local_cid, 0x03 /* security block */);
+                    }
                     break;
 
                 case HCI_EVENT_LINK_KEY_REQUEST:
@@ -929,14 +1119,21 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 case HCI_EVENT_LINK_KEY_NOTIFICATION:
                     flip_bd_addr(event_addr, &packet[2]);
                     memcpy(stored_key, &packet[8], 16);
+                    /* a new key is only stored while pairing mode is on. Outside it only a "changed combination key"
+                       (type 0x06, on a link that was already authenticated) of a device we already know is accepted. */
+                    if (!pairing_mode && !(packet[24] == 0x06 && keys_find(event_addr, link_key_tmp))) break;
                     keys_upsert(event_addr, stored_key);
-                    pairing_mode = 0;
+                    set_pairing_mode(0);
                     pin_request = 0;
                     if (!is_connected) status_text = "Paired - waiting for the device to connect";
                     break;
 
                 case HCI_EVENT_PIN_CODE_REQUEST:
                     hci_event_pin_code_request_get_bd_addr(packet, pin_addr);
+                    if (!pairing_mode) {              /* legacy pairing from a device while pairing mode is off: refuse */
+                        bt_send_cmd(&hci_pin_code_request_negative_reply, pin_addr);
+                        break;
+                    }
                     pin_request_time = time(NULL);
                     pin_request = 1;
                     status_text = "Enter the PIN shown on the TV";
@@ -945,6 +1142,10 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 #ifndef BLUEMOTE_NO_PASSKEY
                 case 0x34: /* HCI_EVENT_USER_PASSKEY_REQUEST */
                     flip_bd_addr(pin_addr, &packet[2]);
+                    if (!pairing_mode) {
+                        bt_send_cmd(&hci_user_passkey_request_negative_reply, pin_addr);
+                        break;
+                    }
                     pin_request_time = time(NULL);
                     pin_request = 2;
                     status_text = "Enter the passkey shown on the TV";
@@ -960,6 +1161,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         we_initiated = 0;
                         status_text = hid_control ? "Connection to TV failed - try again"
                                                   : "Could not reach the TV - is it on? (pair again if it keeps failing)";
+                        /* interrupt channel failed while the control channel is open: do not leave it half open */
+                        if (l2cap_event_channel_opened_get_psm(packet) == BLUETOOTH_PSM_HID_INTERRUPT)
+                            drop_half_open_link();
                         break;
                     }
                     hid_handle = little_endian_read_16(packet, 9);
@@ -967,6 +1171,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     local_cid = little_endian_read_16(packet, 13);
                     if (psm == BLUETOOTH_PSM_HID_CONTROL) {
                         hid_control = local_cid;
+                        if (!hid_interrupt) half_open_timer_start();      /* the interrupt channel must follow */
                         if (we_initiated && !hid_interrupt) {
                             bt_send_cmd(&l2cap_create_channel_cmd, target_addr, BLUETOOTH_PSM_HID_INTERRUPT, 48);
                         }
@@ -975,11 +1180,14 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         hid_interrupt = local_cid;
                         mouse_buttons = 0;
                         is_connected = 1;
+                        half_open_dropped = 0;
+                        half_open_timer_stop();
                         status_text = "Connected";
                         {
                             bd_addr_t peer;
                             l2cap_event_channel_opened_get_address(packet, peer);
                             addr_to_str(peer, connected_str);
+                            keys_touch(peer);            /* "most recent device" = last one that connected */
                             bt_send_cmd(&hci_remote_name_request, peer, 0, 0, 0);   /* learn the device name once */
                         }
                     }
@@ -995,8 +1203,10 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         mouse_buttons = 0;
                         connected_str[0] = 0;
                         if (!hid_control) {
+                            half_open_timer_stop();
                             we_initiated = 0;
-                            status_text = "Disconnected - waiting for device";
+                            if (half_open_dropped) half_open_dropped = 0;       /* keep "Connection to TV failed" on screen */
+                            else status_text = "Disconnected - waiting for device";
                             check_pending_connect();
                         }
                     }
@@ -1026,6 +1236,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     /* a link we do not use (a stray device, a failed pairing) dropped: keep our HID state */
                     if (hid_handle != 0 && little_endian_read_16(packet, 3) != hid_handle) break;
                     hid_handle = 0;
+                    half_open_timer_stop();
+                    half_open_dropped = 0;
                     connected_str[0] = 0;
                     pin_request = 0;
                     is_connected = 0;
@@ -1034,8 +1246,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     hid_interrupt = 0;
                     mouse_buttons = 0;
                     status_text = "Disconnected - waiting for TV";
-                    bt_send_cmd(&hci_write_scan_enable, 0x03);
-                    bt_send_cmd(&btstack_set_discoverable, 1);
+                    scan_apply();                     /* paired devices stay connectable; discoverable only in pairing mode */
                     check_pending_connect();
                     break;
 
@@ -1099,18 +1310,16 @@ void bluemote_set_data_dir(const char *dir) {
     char path[512];
     snprintf(path, sizeof(path), "%s/link_keys.bin", dir);
     if (access(path, F_OK) != 0 && access(OLD_LINK_KEY_FILE, F_OK) == 0) {
+        /* the key file is at most MAX_KEYS records; read it whole and write the new file atomically, so a crash in the
+           middle can never leave a half-copied link_keys.bin behind (which would then be used as if it were complete) */
+        uint8_t buf[MAX_KEYS * sizeof(stored_link_key_t)];
         FILE *in = fopen(OLD_LINK_KEY_FILE, "rb");
-        FILE *out = in ? fopen(path, "wb") : NULL;
-        int ok = 0;
-        if (in && out) {
-            char buf[256];
-            size_t n;
-            ok = 1;
-            while ((n = fread(buf, 1, sizeof(buf), in)) > 0) if (fwrite(buf, 1, n, out) != n) ok = 0;
+        if (in) {
+            size_t n = fread(buf, 1, sizeof(buf), in);
+            fclose(in);
+            n -= n % sizeof(stored_link_key_t);               /* whole records only */
+            if (n > 0 && write_file_atomic(path, buf, n) == 0) unlink(OLD_LINK_KEY_FILE);
         }
-        if (in) fclose(in);
-        if (out) fclose(out);
-        if (ok) unlink(OLD_LINK_KEY_FILE); else unlink(path);
     }
     chmod(path, 0600);
     snprintf(key_file_path, sizeof(key_file_path), "%s", path);

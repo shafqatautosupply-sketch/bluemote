@@ -12,12 +12,18 @@ Before 7.1 the daemon called `gap_ssp_set_enable(0)`, so every TV fell back to l
 
 ## Steps
 
-1. Settings > Pairing & Devices > **Pair new device** (discoverable; old keys are ignored so a TV that forgot the phone can pair again).
+1. Settings > Pairing & Devices > **Pair new device** (pairing mode: discoverable, anybody can connect and pair, and old keys are ignored so a TV that forgot the phone can pair again). Pairing mode closes by itself **after 2 minutes**, after a device paired, on **Connect**, and when the app is closed. Tap **Pair new device** again to restart the 2 minutes.
 2. On the TV: Bluetooth > add device > choose the iPhone.
-3. The keys are stored by the app in `~/Library/Application Support/Bluemote/link_keys.bin` (up to 8 devices, newest first).
+3. The keys are stored by the app in `~/Library/Application Support/Bluemote/link_keys.bin` (up to 8 devices, most recently connected first).
 
 Other actions on that screen: **Reconnect to last**, **Disconnect**, **Forget saved devices**. Bluemote reconnects to the
-last device when it starts.
+last device that was connected when it starts (a device moves to the top of the list when it connects, not when it pairs).
+
+## Who can connect
+
+Only paired devices, unless pairing mode is on. With pairing mode off the iPhone is not discoverable, the daemon rejects
+connection requests from unknown devices and refuses every new pairing (also from a paired device that lost its key: the TV
+has to be paired again through **Pair new device**), and the app ignores unknown link keys and PIN requests.
 
 ## When a code is still asked
 

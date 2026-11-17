@@ -870,6 +870,60 @@ static void btstack_server_intel_firmware_done(int result){
 }
 #endif
 
+// ---------------------------------------------------------------------------------------------------------------
+// Bluemote: only paired devices may connect, unless pairing mode is on.
+//
+// The app tells the daemon (BTSTACK_SET_CONNECTION_FILTER) which devices are paired and whether pairing mode is open.
+//   * closed (default, also after the app goes away): incoming connection requests from any other device are rejected at
+//     the HCI level, before L2CAP or pairing, and every new SSP pairing is refused (IO capability "unknown" makes the
+//     stack answer the request with "pairing not allowed"), also from a device that is on the list.
+//   * open: anybody may connect and pair, using the IO capability mode the app selected.
+// ---------------------------------------------------------------------------------------------------------------
+#define FILTER_MAX_DEVICES 8
+static bd_addr_t filter_allowed[FILTER_MAX_DEVICES];
+static int       filter_allowed_count = 0;
+static bd_addr_t filter_staging[FILTER_MAX_DEVICES];
+static int       filter_staging_count = 0;
+static int       pairing_open = 0;
+static uint8_t   ssp_iocap_mode = SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT;   // what an open pairing mode uses
+
+// 1 = let the device connect, 0 = reject. Called by the stack for every incoming ACL connection request.
+static int daemon_classic_connection_filter(bd_addr_t addr){
+    if (pairing_open) return 1;
+    int i;
+    for (i = 0; i < filter_allowed_count; i++){
+        if (bd_addr_cmp(addr, filter_allowed[i]) == 0) return 1;
+    }
+    log_info("connection filter: rejected %s (not paired, pairing mode off)", bd_addr_to_str(addr));
+    return 0;
+}
+
+// pairing closed: refuse all SSP pairing. pairing open: use the selected mode.
+static void daemon_apply_ssp_policy(void){
+    if (!pairing_open){
+        gap_ssp_set_io_capability(SSP_IO_CAPABILITY_UNKNOWN);
+        gap_ssp_set_auto_accept(0);
+        return;
+    }
+    if (ssp_iocap_mode == SSP_IO_CAPABILITY_KEYBOARD_ONLY) {
+        // optional mode: the TV shows a passkey and the user types it in the app (app answers the passkey request)
+        gap_ssp_set_io_capability(SSP_IO_CAPABILITY_KEYBOARD_ONLY);
+        gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_REQUIRED_GENERAL_BONDING);
+        gap_ssp_set_auto_accept(0);
+    } else {
+        // default: Just Works, fully automatic
+        gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
+        gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
+        gap_ssp_set_auto_accept(1);
+    }
+}
+
+static void daemon_set_pairing_open(int open){
+    pairing_open = open ? 1 : 0;
+    log_info("pairing mode %s", pairing_open ? "open" : "closed");
+    daemon_apply_ssp_policy();
+}
+
 static int btstack_command_handler(connection_t *connection, uint8_t *packet, uint16_t size){
     
     bd_addr_t addr;
@@ -962,16 +1016,37 @@ static int btstack_command_handler(connection_t *connection, uint8_t *packet, ui
             break;
         case BTSTACK_SET_SSP_IOCAP:
             log_info("BTSTACK_SET_SSP_IOCAP %u", packet[3]);
-            if (packet[3] == SSP_IO_CAPABILITY_KEYBOARD_ONLY) {
-                // optional mode: the TV shows a passkey and the user types it in the app (app answers the passkey request)
-                gap_ssp_set_io_capability(SSP_IO_CAPABILITY_KEYBOARD_ONLY);
-                gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_REQUIRED_GENERAL_BONDING);
-                gap_ssp_set_auto_accept(0);
-            } else {
-                // default: Just Works, fully automatic
-                gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
-                gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
-                gap_ssp_set_auto_accept(1);
+            // remember the mode; it only takes effect while pairing mode is open (closed = pairing refused)
+            ssp_iocap_mode = (packet[3] == SSP_IO_CAPABILITY_KEYBOARD_ONLY) ? SSP_IO_CAPABILITY_KEYBOARD_ONLY
+                                                                              : SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT;
+            daemon_apply_ssp_policy();
+            break;
+        case BTSTACK_SET_CONNECTION_FILTER:
+            log_info("BTSTACK_SET_CONNECTION_FILTER action %u value %u", packet[3], packet[4]);
+            switch (packet[3]){
+                case 0:     // clear staging list
+                    filter_staging_count = 0;
+                    break;
+                case 1:     // add to staging list
+                    if (filter_staging_count < FILTER_MAX_DEVICES){
+                        reverse_bd_addr(&packet[5], addr);
+                        bd_addr_copy(filter_staging[filter_staging_count], addr);
+                        filter_staging_count++;
+                    }
+                    break;
+                case 2: {   // commit: the staging list becomes the list of devices that may connect
+                    int i;
+                    for (i = 0; i < filter_staging_count; i++){
+                        bd_addr_copy(filter_allowed[i], filter_staging[i]);
+                    }
+                    filter_allowed_count = filter_staging_count;
+                    break;
+                }
+                case 3:     // pairing mode open / closed
+                    daemon_set_pairing_open(packet[4]);
+                    break;
+                default:
+                    break;
             }
             break;
         case BTSTACK_SET_BLUETOOTH_ENABLED:
@@ -1387,6 +1462,8 @@ static int daemon_client_handler(connection_t *connection, uint16_t packet_type,
                     // no clients -> no HCI connections
                     if (!clients){
                         hci_disconnect_all();
+                        // nobody is running the pairing screen any more: pairing mode never stays open
+                        daemon_set_pairing_open(0);
                     }
 
                     // update discoverable mode
@@ -1987,6 +2064,11 @@ static void btstack_server_configure_stack(void){
     gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
     gap_ssp_set_auto_accept(1);
+    // Bluemote: start closed. Only devices the app lists as paired may connect, and nobody can pair, until the app
+    // opens pairing mode (BTSTACK_SET_CONNECTION_FILTER).
+    gap_register_classic_connection_filter(&daemon_classic_connection_filter);
+    gap_connectable_control(1);      // page scan on, so paired devices can reconnect (inquiry scan = pairing mode only)
+    daemon_set_pairing_open(0);
 #endif
 
     // register for HCI events

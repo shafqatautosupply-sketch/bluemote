@@ -13,7 +13,7 @@ KEYBOARD SHEET (v7.5)
   scale (gKeyRadiusScale) that BTKeyButton drawRect: sets around BTKeyDrawWall / BTKeyDrawFace, so BTKeyRadius() stays the one place
   that decides the radius. MediaView still calls BTKeyRadius with the default.
   About (SettingsViewController.m, SecAbout): version from Info.plist, developer name, GitHub repo link, BTstack credit link.
-  Scroll tab (TrackpadView.m, TrackpadScrollTab): left-edge strip, TAB_STEP = 7 pt per wheel step, Settings switch kPrefScrollTab
+  Scroll tab (TrackpadView.m, TrackpadScrollTab): left-edge strip, TAB_STEP = 7 pt per wheel step; the touch area runs from the left screen edge to TAB_HIT_RIGHT (8 pt) past the drawn tab (padLeft = invisible area left of the pill), Settings switch kPrefScrollTab
   (default on) read through BTScrollTabEnabled() in UIHelpers.h.
 
 OK BUTTON (v7.3) - like a real TV remote
@@ -142,10 +142,22 @@ DAEMON NOTES (v5.3)
   Keep the Makefile file list free of "#" comment lines: a comment ending in a backslash swallows the following lines.
 
 PAIRING (built into the app, "Pair" tab)
-  Pair new device    : enters pairing mode (discoverable, old keys are ignored so a TV that forgot
-                       the iPhone can pair again). On the TV: Bluetooth > add device > pick this iPhone.
-                       Keys are saved by the app in /var/mobile/bt_link_keys.bin (up to 8 devices, newest first).
-  Reconnect to last  : connects to the most recently paired device.
+  Pair new device    : enters pairing mode (discoverable, anybody may connect and pair, old keys are ignored so a TV
+                       that forgot the iPhone can pair again). On the TV: Bluetooth > add device > pick this iPhone.
+                       Keys are saved by the app in /var/mobile/bt_link_keys.bin (up to 8 devices, most recently
+                       CONNECTED first: keys_touch() moves a device to the top when its HID channel opens; keys_upsert()
+                       does not reorder, a new device goes to the end).
+  Reconnect to last  : connects to the most recently connected device.
+  Pairing gate       : pairing mode off = only paired devices may connect (daemon.c daemon_classic_connection_filter,
+                       BTSTACK_SET_CONNECTION_FILTER 0x0A: action 0 clear staging, 1 add address, 2 commit list,
+                       3 pairing open/closed) and no new pairing (IO capability UNKNOWN -> "pairing not allowed").
+                       The daemon starts closed and closes again when its last client disconnects. The app also declines
+                       incoming L2CAP channels / ignores link keys, PIN and passkey requests from unknown devices.
+                       Pairing mode ends by itself after PAIRING_TIMEOUT_MS (120 s, btstack run loop timer on the Bluetooth
+                       thread; waits PAIRING_PIN_GRACE_MS while a PIN / passkey box is open).
+  Half open links    : interrupt channel failed -> drop_half_open_link() closes the control channel; interrupt channel
+                       silent -> HALF_OPEN_TIMEOUT_MS (10 s) timer does the same.
+                       Scan state: page scan always (gap_connectable_control(1) in the daemon), inquiry scan only in pairing mode.
   Disconnect         : drops the Bluetooth HID channels.
   Forget saved       : deletes all stored keys (asks first).
   PIN prompt         : when the TV shows a PIN, a box opens on any tab; type the code and tap Pair

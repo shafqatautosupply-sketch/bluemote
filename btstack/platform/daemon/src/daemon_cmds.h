@@ -64,6 +64,7 @@ typedef enum {
     DAEMON_OPCODE_BTSTACK_SET_DISCOVERABLE = DAEMON_OPCODE(BTSTACK_SET_DISCOVERABLE),
     DAEMON_OPCODE_BTSTACK_SET_BLUETOOTH_ENABLED = DAEMON_OPCODE(BTSTACK_SET_BLUETOOTH_ENABLED),
     DAEMON_OPCODE_BTSTACK_SET_SSP_IOCAP = DAEMON_OPCODE(BTSTACK_SET_SSP_IOCAP),
+    DAEMON_OPCODE_BTSTACK_SET_CONNECTION_FILTER = DAEMON_OPCODE(BTSTACK_SET_CONNECTION_FILTER),
     DAEMON_OPCODE_L2CAP_CREATE_CHANNEL = DAEMON_OPCODE(L2CAP_CREATE_CHANNEL),
     DAEMON_OPCODE_L2CAP_CREATE_CHANNEL_MTU = DAEMON_OPCODE(L2CAP_CREATE_CHANNEL_MTU),
     DAEMON_OPCODE_L2CAP_DISCONNECT = DAEMON_OPCODE(L2CAP_DISCONNECT),
@@ -126,6 +127,7 @@ extern const hci_cmd_t btstack_get_system_bluetooth_enabled;
 extern const hci_cmd_t btstack_set_system_bluetooth_enabled;
 extern const hci_cmd_t btstack_set_discoverable;
 extern const hci_cmd_t btstack_set_ssp_iocap;
+extern const hci_cmd_t btstack_set_connection_filter;
 extern const hci_cmd_t btstack_set_bluetooth_enabled;    // only used by btstack config
 
 extern const hci_cmd_t l2cap_accept_connection_cmd;

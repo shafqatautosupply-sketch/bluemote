@@ -204,11 +204,18 @@
 
 #define TAB_IDLE_ALPHA 0.22f
 #define TAB_STEP       7.0f         /* points of finger travel per wheel step */
+#define TAB_PILL_W     40.0f        /* width of the visible tab (pill + its shadow room) */
+#define TAB_HIT_RIGHT  8.0f         /* extra touch area to the right of the visible tab */
 
+/* The touch area is bigger than the drawn tab: it reaches from the very left edge of the screen (the strip of aluminium
+   frame to the left of the pad, where a thumb naturally lands) to a little past the right side of the pill. The pill itself
+   is drawn where it always was, padLeft points from the left edge of this view. */
 @interface TrackpadScrollTab : UIView {
     BOOL active;
     CGFloat lastY, acc;
+    CGFloat padLeft;            /* invisible touch area to the left of the drawn pill */
 }
+- (void)setPadLeft:(CGFloat)p;
 @end
 
 @implementation TrackpadScrollTab
@@ -223,6 +230,13 @@
         self.alpha = TAB_IDLE_ALPHA;
     }
     return self;
+}
+
+- (void)setPadLeft:(CGFloat)p {
+    if (p < 0.0f) p = 0.0f;
+    if (p == padLeft) return;
+    padLeft = p;
+    [self setNeedsDisplay];
 }
 
 - (void)setActive:(BOOL)a {
@@ -282,7 +296,7 @@
 - (void)drawRect:(CGRect)rect {
     CGContextRef c = UIGraphicsGetCurrentContext();
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGRect pill = CGRectMake(6.0f, 3.0f, 28.0f, self.bounds.size.height - 8.0f);
+    CGRect pill = CGRectMake(padLeft + 6.0f, 3.0f, 28.0f, self.bounds.size.height - 8.0f);
     UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:pill cornerRadius:14.0f];
 
     CGContextSaveGState(c);                                          /* soft shadow so the tab lifts off the metal */
@@ -562,7 +576,10 @@ static void TPDrawGlyph(CGContextRef c, CGPoint ctr, int kind, UIColor *color) {
     infoB.frame = CGRectMake(6, 6, 30, 30);
     CGRect sf = surface.frame;                                      /* scroll tab: left edge, below the "i" button, clear of the corners */
     CGFloat tabH = sf.size.height - 44.0f - 10.0f;
-    scrollTab.frame = CGRectMake(sf.origin.x + 2.0f, sf.origin.y + 44.0f, 40.0f, MAX(tabH, 0.0f));
+    CGFloat tabPad = sf.origin.x + 2.0f;                            /* where the drawn tab starts, measured from the left edge of this view */
+    [(TrackpadScrollTab *)scrollTab setPadLeft:tabPad];
+    /* touch area: from the left edge of the screen to a little right of the tab, so a finger on the very edge works */
+    scrollTab.frame = CGRectMake(0.0f, sf.origin.y + 44.0f, tabPad + TAB_PILL_W + TAB_HIT_RIGHT, MAX(tabH, 0.0f));
     if (tabH < 70.0f) scrollTab.hidden = YES;
     else scrollTab.hidden = !BTScrollTabEnabled();
     CGFloat kgap = 8.0f;

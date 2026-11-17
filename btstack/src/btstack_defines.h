@@ -165,6 +165,12 @@ typedef uint8_t sm_key_t[16];
 // Bluemote: set Secure Simple Pairing IO capability: param io_capability (3 = NoInputNoOutput / Just Works, 2 = KeyboardOnly)
 #define BTSTACK_SET_SSP_IOCAP                              0x09
 
+// Bluemote: connection filter / pairing gate. params: action(8), value(8), bd_addr(48)
+//   action 0 = clear the staging list, 1 = add bd_addr to the staging list, 2 = commit the staging list (devices that may
+//   connect), 3 = pairing mode open (value 1) / closed (value 0). Closed = only listed devices may connect and every new
+//   pairing is refused; open = anybody may connect and pair.
+#define BTSTACK_SET_CONNECTION_FILTER                      0x0A
+
 // create l2cap channel: param bd_addr(48), psm (16)
 #define L2CAP_CREATE_CHANNEL                               0x20
 

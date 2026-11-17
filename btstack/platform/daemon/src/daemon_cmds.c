@@ -98,6 +98,16 @@ const hci_cmd_t btstack_set_ssp_iocap = {
 };
 
 /**
+ * Bluemote: who may connect / pair.
+ * @param action (0 = clear staging list, 1 = add bd_addr to staging list, 2 = commit staging list, 3 = pairing mode open/closed)
+ * @param value (action 3: 1 = open, 0 = closed; ignored otherwise)
+ * @param bd_addr (action 1; ignored otherwise)
+ */
+const hci_cmd_t btstack_set_connection_filter = {
+    DAEMON_OPCODE_BTSTACK_SET_CONNECTION_FILTER, "11B"
+};
+
+/**
  * @param bluetooth_enabled_flag (0 = off, 1 = on, only used by btstack config)
  */
 const hci_cmd_t btstack_set_bluetooth_enabled = {

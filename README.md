@@ -64,9 +64,9 @@ Cydia one if both try to start.
 
 ## Pair with a TV
 
-1. In Bluemote open **Settings > Pairing & Devices > Pair new device** (the phone becomes discoverable).
+1. In Bluemote open **Settings > Pairing & Devices > Pair new device** (pairing mode: for 2 minutes the phone is discoverable and accepts new devices; outside pairing mode only already paired devices can connect).
 2. On the TV open Bluetooth settings, add a device and choose the iPhone.
-3. It pairs by itself; no code is shown. Bluemote reconnects to the last device automatically on start.
+3. It pairs by itself; no code is shown. Bluemote reconnects to the last connected device automatically on start.
 
 Re-pairing after an update: **Forget saved devices**, remove the iPhone from the TV's Bluetooth list, pair again.
 Details and the PIN fallback for older TVs: [docs/PAIRING.md](docs/PAIRING.md).
