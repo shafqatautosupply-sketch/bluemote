@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## 7.6.0
+- **The app survives a restart of the BTstack daemon (or of the chip).** The client library reports
+  `DAEMON_EVENT_CONNECTION_CLOSED` when the daemon goes away; the app ignored it, kept using a freed connection and never
+  re-registered anything. Now `btstack.c` forgets the connection (`bt_send_*` are safe without one), the app forgets all link state,
+  reopens the socket by timer (which starts the daemon again; it never gives up any more, the first start no longer ends the
+  Bluetooth thread after 10 s), and repeats the whole start-up: L2CAP services, power on, SDP record, paired-device filter,
+  reconnect (only if the person had not pressed Disconnect). If the chip goes `OFF` / `HALTING` while a link is up, the link state
+  is reset too. `socket_connection_open_*` no longer leaks the descriptor of a failed connect (it is retried every few seconds).
+- **Automatic reconnect.** The app now keeps trying to reach the last device (the SDP record says the phone reconnects, and many TVs
+  never connect by themselves): after a failed attempt, a lost link or a fresh pairing it retries after 2 s, 5 s, 15 s, then every 30 s,
+  at most 12 attempts per cycle (about 5 minutes; then the status says "TV not found - tap Reconnect to try again"). After a pairing the
+  app waits 3 s for the TV to connect by itself, then connects to it. It runs only while the app is in the foreground (new
+  `ACTIVE 1|0` command, sent from `applicationDidBecomeActive` / `applicationWillResignActive`; coming back starts a fresh cycle),
+  never in pairing mode, and never after a deliberate Disconnect, Forget saved devices or forgetting the connected device.
+  A retry goes to the device that was really connected last (`target_addr` follows every connection).
+- **A second device can no longer take over a connection.** While a device is connected (or being connected) an incoming L2CAP
+  channel from a different device is declined; the second channel of the same device is still accepted (`busy_with_other_device()`).
 - **Only paired devices can connect, unless pairing mode is on.** Before, the iPhone was always discoverable and connectable,
   accepted every incoming connection and silently paired with anybody ("Just Works"). Now, with pairing mode off:
   - the iPhone is not discoverable (page scan only, so paired TVs can still reconnect);

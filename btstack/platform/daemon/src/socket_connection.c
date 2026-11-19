@@ -612,6 +612,7 @@ connection_t * socket_connection_open_tcp(const char *address, uint16_t port){
 	char* addr = localhost->h_addr_list[0];
 	memcpy(&btdaemon_address.sin_addr.s_addr, addr, sizeof (struct in_addr));
 	if(connect(btsocket, (struct sockaddr*)&btdaemon_address, sizeof (btdaemon_address)) == -1){
+		close(btsocket);
 		return NULL;
 	}
     
@@ -703,6 +704,7 @@ connection_t * socket_connection_open_unix(void){
     server.sun_family = AF_UNIX;
     strcpy(server.sun_path, BTSTACK_UNIX);
     if (connect(btsocket, (struct sockaddr *)&server, sizeof (server)) == -1){
+        close(btsocket);                    // Bluemote: retried every few seconds while the daemon is down, do not leak the fd
         return NULL;
     };
     

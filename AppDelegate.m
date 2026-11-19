@@ -76,6 +76,15 @@ static NSString *BTAckKey(NSString *machine, NSString *ios) {
     return YES;
 }
 
+/* automatic reconnect only runs while the app is in the foreground; coming back starts a fresh cycle */
+- (void)applicationDidBecomeActive:(UIApplication *)application {
+    bluemote_send("ACTIVE 1");
+}
+
+- (void)applicationWillResignActive:(UIApplication *)application {
+    bluemote_send("ACTIVE 0");
+}
+
 - (void)showUntestedWarning {
     NSString *msg = [NSString stringWithFormat:
         @"Bluemote was built and tested on an iPhone 4s running iOS 6. This is %@ on iOS %@, which has not been tested.\n\n"

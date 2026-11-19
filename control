@@ -1,6 +1,6 @@
 Package: com.bluemote.app
 Name: Bluemote
-Version: 7.5.0
+Version: 7.6.0
 Architecture: iphoneos-arm
 Description: iPhone as a Bluetooth trackpad, keyboard and media remote (standalone, BTstack 1.2 inside)
 Maintainer: shafqatautosupply-sketch

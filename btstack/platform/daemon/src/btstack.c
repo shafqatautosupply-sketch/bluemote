@@ -80,6 +80,11 @@ void bt_use_tcp(const char * address, uint16_t port){
 
 static int socket_packet_handler(connection_t *connection, uint16_t packet_type, uint16_t channel, uint8_t *data, uint16_t size){
     // log_info("BTstack client handler: packet type %u, data[0] %x", packet_type, data[0]);
+    // Bluemote: the daemon closed the socket. The library frees the connection right after this callback, so forget it
+    // here: bt_send_* must never write to a freed connection, and bt_open() can then be called again.
+    if (packet_type == DAEMON_EVENT_PACKET && size >= 1 && data[0] == DAEMON_EVENT_CONNECTION_CLOSED){
+        btstack_connection = NULL;
+    }
     (*client_packet_handler)(packet_type, channel, data, size);
     return 0;
 }
@@ -125,6 +130,7 @@ int bt_send_cmd(const hci_cmd_t *cmd, ...){
     va_start(argptr, cmd);
     uint16_t len = hci_cmd_create_from_template(hci_cmd_buffer, cmd, argptr);
     va_end(argptr);
+    if (!btstack_connection) return -1;     // not connected to the daemon (never opened or closed)
     socket_connection_send_packet(btstack_connection, HCI_COMMAND_DATA_PACKET, 0, hci_cmd_buffer, len);
     return 0;
 }
@@ -138,15 +144,18 @@ btstack_packet_handler_t bt_register_packet_handler(btstack_packet_handler_t han
 
 void bt_send_l2cap(uint16_t source_cid, uint8_t *data, uint16_t len){
     // send
+    if (!btstack_connection) return;
     socket_connection_send_packet(btstack_connection, L2CAP_DATA_PACKET, source_cid, data, len);
 }
 
 void bt_send_rfcomm(uint16_t rfcomm_cid, uint8_t *data, uint16_t len){
     // send
+    if (!btstack_connection) return;
     socket_connection_send_packet(btstack_connection, RFCOMM_DATA_PACKET, rfcomm_cid, data, len);
 }
 
 void bt_send_acl(uint8_t * data, uint16_t len){
     // send
+    if (!btstack_connection) return;
     socket_connection_send_packet(btstack_connection, HCI_ACL_DATA_PACKET, 0, data, len);
 }

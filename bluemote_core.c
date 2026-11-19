@@ -11,6 +11,7 @@
  *   PASTE / PASTECONT   (long text typed in small slices, see bluemote_paste_*)
  *   PAIR PAIRSTOP RECONNECT CONNECT n DISCONNECT FORGET FORGETDEV n PACE us
  *   PIN code | PINCANCEL | IOCAP 2|3
+ *   ACTIVE 1|0          (app in the foreground / not: automatic reconnect only runs while active)
  */
 
 #include <unistd.h>
@@ -46,6 +47,13 @@ static uint16_t hid_interrupt = 0;
 static uint16_t hid_handle = 0;               /* ACL handle of the HID link, 0 if none */
 static volatile int is_connected = 0;
 static int we_initiated = 0;
+static bd_addr_t hid_peer;             /* the device whose HID channel is open (or has just opened): only this device may open the second channel */
+static int hid_peer_valid = 0;
+static int app_active = 1;             /* the app is in the foreground (ACTIVE command); automatic reconnect only runs then */
+static int auto_reconnect = 0;         /* keep trying to reach the last device; switched off by Disconnect / Forget */
+static int reconnect_attempt = 0;      /* connection attempts made in the current cycle */
+static int reconnect_timer_on = 0;
+static int session_restarted = 0;      /* the daemon or the chip went away and came back: decide at HCI_STATE_WORKING whether to reconnect */
 static int half_open_dropped = 0;      /* we are closing a control channel whose interrupt channel failed (keeps the failure text on screen) */
 static uint8_t mouse_buttons = 0;
 static const char * volatile status_text = "Starting...";
@@ -150,6 +158,9 @@ static void addr_to_str(const uint8_t *a, char *out) {
 }
 static volatile int pairing_mode = 0;
 static void filter_sync(void);      /* tell the daemon which devices are paired (defined with the pairing code below) */
+static void reconnect_arm(uint32_t override_ms);      /* automatic reconnect, defined after start_connect() */
+static void reconnect_timer_stop(void);
+static void reconnect_begin_cycle(void);
 
 /* PIN / passkey entry requested by the TV: 0 none, 1 legacy PIN, 2 SSP passkey */
 static volatile int pin_request = 0;
@@ -686,17 +697,20 @@ static void pairing_timeout_handler(btstack_timer_source_t *ts) {
     }
     set_pairing_mode(0);
     status_text = is_connected ? "Connected" : "Pairing mode ended - tap Pair new device to try again";
+    reconnect_arm(0);                       /* pairing mode had paused the automatic reconnect */
 }
 
 static void cmd_pair(void) {
     /* during pairing mode we never hand out an old link key, so a TV that forgot us can re-pair */
     status_text = "Pairing mode (2 min): on the TV add a Bluetooth device and pick this iPhone";
     pairing_set(1, 1);                  /* always tell the daemon, even if the flag was already on */
+    reconnect_timer_stop();             /* no outgoing connections while pairing */
 }
 
 static void cmd_pair_stop(void) {
     set_pairing_mode(0);
     status_text = is_connected ? "Connected" : "Ready - waiting for TV";
+    reconnect_arm(0);
 }
 
 static void cmd_forget(void) {
@@ -704,6 +718,8 @@ static void cmd_forget(void) {
     keys_save();
     keys_update_summary();
     filter_sync();
+    auto_reconnect = 0;
+    reconnect_timer_stop();
     set_pairing_mode(0);
     status_text = "Saved devices forgotten. Tap Pair new device.";
 }
@@ -723,6 +739,8 @@ static void cmd_connect(int idx) {
     }
     if (is_connected && strcmp(connected_str, saved_addr_str[idx]) == 0) return;   /* already connected to it */
     memcpy(target_addr, keys[idx].addr, 6);
+    reconnect_begin_cycle();                /* this attempt is number 1; if it fails the app keeps trying */
+    reconnect_attempt = 1;
     if (is_connected || hid_control || hid_interrupt) {
         pending_connect = 1;
         status_text = "Switching device...";
@@ -743,7 +761,11 @@ static void cmd_forget_dev(int idx) {
     keys_update_summary();
     filter_sync();
     status_text = "Device forgotten";
-    if (was_connected) cmd_disconnect_now();
+    if (was_connected) {
+        auto_reconnect = 0;                 /* the person removed the device we were using: do not reconnect to something else */
+        reconnect_timer_stop();
+        cmd_disconnect_now();
+    }
 }
 
 /* after a disconnect: start the connection that was waiting for it */
@@ -756,6 +778,8 @@ static void check_pending_connect(void) {
 
 static void cmd_disconnect(void) {
     pending_connect = 0;
+    auto_reconnect = 0;                     /* a deliberate Disconnect stays disconnected */
+    reconnect_timer_stop();
     cmd_disconnect_now();
 }
 
@@ -808,6 +832,77 @@ static void half_open_timer_start(void) {
     btstack_run_loop_add_timer(&half_open_timer);
 }
 
+/* ---- automatic reconnect ----
+   The SDP record says HIDReconnectInitiate = 1, i.e. WE are the one who reconnects, and many TVs never connect to the
+   phone themselves. So after a failed attempt, a lost link or a fresh pairing the app keeps trying to reach the last device:
+   after 2 s, 5 s, 15 s, then every 30 s, at most RECONNECT_MAX_ATTEMPTS attempts per cycle (about 5 minutes, then it stops
+   and says so, so a TV that is off does not keep the radio paging forever). It only runs while the app is in the foreground
+   (ACTIVE command), never during pairing mode, and never after a deliberate Disconnect / Forget. A new cycle starts when
+   the app comes to the foreground, when a connection is made, or when the person taps Reconnect / Connect. */
+#define RECONNECT_MAX_ATTEMPTS    12
+#define RECONNECT_WAKE_DELAY_MS   300
+#define PAIR_CONNECT_DELAY_MS     3000     /* after a pairing the TV usually connects by itself: give it a moment first */
+static const uint32_t reconnect_delays_ms[] = { 2000, 5000, 15000, 30000 };
+static btstack_timer_source_t reconnect_timer;
+
+static int reconnect_wanted(void) {
+    return auto_reconnect && app_active && bt_working && !pairing_mode && key_count > 0
+        && !is_connected && !hid_control && !hid_interrupt && !pending_connect && !we_initiated;
+}
+
+static void reconnect_timer_stop(void) {
+    btstack_run_loop_remove_timer(&reconnect_timer);
+    reconnect_timer_on = 0;
+}
+
+static void reconnect_begin_cycle(void) {
+    auto_reconnect = 1;
+    reconnect_attempt = 0;
+}
+
+static void reconnect_timer_handler(btstack_timer_source_t *ts) {
+    uint8_t tmp[16];
+    (void)ts;
+    reconnect_timer_on = 0;
+    if (!reconnect_wanted()) return;
+    if (!keys_find(target_addr, tmp)) memcpy(target_addr, keys[0].addr, 6);     /* the target was forgotten meanwhile */
+    reconnect_attempt++;
+    start_connect();
+}
+
+/* schedule the next attempt (override_ms = 0: follow the backoff schedule). Safe to call at any time and more than once. */
+static void reconnect_arm(uint32_t override_ms) {
+    if (reconnect_timer_on || !reconnect_wanted()) return;
+    if (reconnect_attempt >= RECONNECT_MAX_ATTEMPTS) {
+        status_text = "TV not found - tap Reconnect to try again";
+        return;
+    }
+    int idx = reconnect_attempt > 0 ? reconnect_attempt - 1 : 0;
+    int last = (int)(sizeof(reconnect_delays_ms) / sizeof(reconnect_delays_ms[0])) - 1;
+    uint32_t ms = override_ms ? override_ms : reconnect_delays_ms[idx > last ? last : idx];
+    btstack_run_loop_set_timer_handler(&reconnect_timer, &reconnect_timer_handler);
+    btstack_run_loop_set_timer(&reconnect_timer, ms);
+    btstack_run_loop_add_timer(&reconnect_timer);
+    reconnect_timer_on = 1;
+}
+
+/* the app went to the background / came back */
+static void cmd_active(int on) {
+    app_active = on ? 1 : 0;
+    reconnect_timer_stop();
+    if (!on) return;
+    if (!auto_reconnect) return;            /* the person pressed Disconnect: stay disconnected */
+    reconnect_attempt = 0;                  /* a fresh cycle */
+    reconnect_arm(RECONNECT_WAKE_DELAY_MS);
+}
+
+/* a different device must not take over while one is connected (or being connected) */
+static int busy_with_other_device(const uint8_t *addr) {
+    if (hid_peer_valid) return memcmp(addr, hid_peer, 6) != 0;
+    if (we_initiated)   return memcmp(addr, target_addr, 6) != 0;
+    return 0;
+}
+
 static void cmd_pin(const char *text) {
     char pin[20];
     size_t n = 0;
@@ -856,6 +951,7 @@ static void process_line(char *line) {
     if (strcasecmp(line, "PAIRSTOP") == 0)   { cmd_pair_stop(); return; }
     if (strcasecmp(line, "FORGET") == 0)     { cmd_forget(); return; }
     if (strcasecmp(line, "RECONNECT") == 0)  { cmd_reconnect(); return; }
+    if (strcasecmp(line, "ACTIVE") == 0)     { int v = 1; sscanf(rest, "%d", &v); cmd_active(v); return; }
     if (strcasecmp(line, "CONNECT") == 0)    { int n = 0; if (sscanf(rest, "%d", &n) >= 1) cmd_connect(n); return; }
     if (strcasecmp(line, "FORGETDEV") == 0)  { int n = -1; if (sscanf(rest, "%d", &n) >= 1) cmd_forget_dev(n); return; }
     if (strcasecmp(line, "DISCONNECT") == 0) { cmd_disconnect(); return; }
@@ -1047,6 +1143,82 @@ static void handle_hid_control(uint8_t *data, uint16_t size) {
     }
 }
 
+/* ---------------- connection to the BTstack daemon ---------------- */
+
+/* The daemon is a separate process (started by launchd the moment we connect to its socket). If it crashes or is restarted,
+   the client library reports DAEMON_EVENT_CONNECTION_CLOSED and drops the socket; everything the daemon knew about us is
+   gone (registered L2CAP services, the SDP record, the paired-device filter, the chip power state). So: forget all link
+   state, reopen the socket (this also starts the daemon again) and run the complete start-up sequence once more; the
+   HCI_STATE_WORKING handler then pushes the filter and the SDP record and reconnects. The same code does the first start,
+   so a daemon that is slow to start no longer ends the Bluetooth thread. */
+static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
+static btstack_timer_source_t daemon_timer;
+static int daemon_fail_count = 0;
+
+static void reset_link_state(void) {
+    half_open_timer_stop();
+    half_open_dropped = 0;
+    hid_handle = 0;
+    hid_control = 0;
+    hid_interrupt = 0;
+    hid_peer_valid = 0;
+    is_connected = 0;
+    we_initiated = 0;
+    pending_connect = 0;
+    connected_str[0] = 0;
+    mouse_buttons = 0;
+    ok_down_mode = -1;
+    pin_request = 0;
+}
+
+static void daemon_session_start(void) {
+    bt_register_packet_handler(packet_handler);
+    bt_send_cmd(&l2cap_register_service_cmd, BLUETOOTH_PSM_HID_CONTROL, 250);
+    bt_send_cmd(&l2cap_register_service_cmd, BLUETOOTH_PSM_HID_INTERRUPT, 250);
+    power_on_time = time(NULL);
+    bt_send_cmd(&btstack_set_power_mode, HCI_POWER_ON);
+    /* If the chip is already on (daemon kept running), powering on is a no-op and no state event follows,
+       so ask for the current state explicitly. */
+    bt_send_cmd(&btstack_get_state);
+}
+
+static void daemon_open_handler(btstack_timer_source_t *ts);
+static void daemon_schedule_open(uint32_t ms) {
+    btstack_run_loop_remove_timer(&daemon_timer);
+    btstack_run_loop_set_timer_handler(&daemon_timer, &daemon_open_handler);
+    btstack_run_loop_set_timer(&daemon_timer, ms);
+    btstack_run_loop_add_timer(&daemon_timer);
+}
+
+static void daemon_open_handler(btstack_timer_source_t *ts) {
+    (void)ts;
+    if (bt_open() == 0) {
+        daemon_fail_count = 0;
+        status_text = "Starting Bluetooth...";
+        daemon_session_start();
+        return;
+    }
+    daemon_fail_count++;
+    status_text = daemon_fail_count > 20 ? "BTstack daemon not running (see /var/log/Bluemote.log)"
+                                         : "Waiting for BTstack daemon...";
+    daemon_schedule_open(daemon_fail_count < 10 ? 500 : 3000);      /* never give up: the daemon may come back any time */
+}
+
+/* the daemon went away (crash, restart, killed) */
+static void daemon_lost(void) {
+    reset_link_state();
+    bt_working = 0;
+    sdp_registered = 0;                     /* the new daemon has no SDP record */
+    power_on_time = 0;
+    pairing_mode = 0;                       /* the new daemon starts with pairing closed */
+    pairing_timer_stop();
+    reconnect_timer_stop();
+    session_restarted = 1;
+    daemon_fail_count = 0;
+    status_text = "Bluetooth daemon stopped - restarting...";
+    daemon_schedule_open(500);
+}
+
 /* ---------------- BTstack packet handler ---------------- */
 
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
@@ -1074,6 +1246,13 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) {
                         bt_working = 0;               /* chip is (re)starting or asleep: set up again when it is working */
+                        if ((btstack_event_state_get_state(packet) == HCI_STATE_OFF ||
+                             btstack_event_state_get_state(packet) == HCI_STATE_HALTING) &&
+                            (is_connected || hid_control || hid_interrupt)) {
+                            reset_link_state();       /* the chip went away: every link is gone, no disconnect event may follow */
+                            session_restarted = 1;
+                            status_text = "Bluetooth restarted - reconnecting...";
+                        }
                         break;
                     }
                     if (bt_working) break;            /* already set up (we also ask for the state, so it can arrive twice) */
@@ -1089,9 +1268,13 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         bt_send_cmd(&sdp_register_service_record_cmd, hid_device_sdp_service_record);
                         sdp_registered = 1;
                     }
-                    if (key_count > 0) {
+                    /* after a restart of the daemon / chip only reconnect if we were meant to be connected */
+                    if (key_count > 0 && (!session_restarted || auto_reconnect)) {
+                        session_restarted = 0;
                         status_text = "Reconnecting to last device...";
                         memcpy(target_addr, keys[0].addr, 6);
+                        reconnect_begin_cycle();
+                        reconnect_attempt = 1;
                         start_connect();
                     }
                     break;
@@ -1100,10 +1283,14 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     local_cid = l2cap_event_incoming_connection_get_local_cid(packet);
                     l2cap_event_incoming_connection_get_address(packet, event_addr);
                     /* only paired devices, unless pairing mode is on */
-                    if (pairing_mode || keys_find(event_addr, stored_key)) {
-                        bt_send_cmd(&l2cap_accept_connection_cmd, local_cid);
-                    } else {
+                    if (!(pairing_mode || keys_find(event_addr, stored_key))) {
                         bt_send_cmd(&l2cap_decline_connection_cmd, local_cid, 0x03 /* security block */);
+                    } else if (busy_with_other_device(event_addr)) {
+                        /* another device is connected (or being connected): it keeps the connection. The second channel
+                           of that same device is still accepted. */
+                        bt_send_cmd(&l2cap_decline_connection_cmd, local_cid, 0x04 /* no resources */);
+                    } else {
+                        bt_send_cmd(&l2cap_accept_connection_cmd, local_cid);
                     }
                     break;
 
@@ -1126,6 +1313,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     set_pairing_mode(0);
                     pin_request = 0;
                     if (!is_connected) status_text = "Paired - waiting for the device to connect";
+                    if (!is_connected && !hid_control) {
+                        /* the TV usually connects by itself; if it has not after a moment, we connect to it */
+                        memcpy(target_addr, event_addr, 6);
+                        reconnect_begin_cycle();
+                        reconnect_arm(PAIR_CONNECT_DELAY_MS);
+                    }
                     break;
 
                 case HCI_EVENT_PIN_CODE_REQUEST:
@@ -1164,9 +1357,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         /* interrupt channel failed while the control channel is open: do not leave it half open */
                         if (l2cap_event_channel_opened_get_psm(packet) == BLUETOOTH_PSM_HID_INTERRUPT)
                             drop_half_open_link();
+                        reconnect_arm(0);               /* try again later (no-op while the half open control channel is still closing) */
                         break;
                     }
                     hid_handle = little_endian_read_16(packet, 9);
+                    l2cap_event_channel_opened_get_address(packet, hid_peer);
+                    hid_peer_valid = 1;
                     psm = little_endian_read_16(packet, 11);
                     local_cid = little_endian_read_16(packet, 13);
                     if (psm == BLUETOOTH_PSM_HID_CONTROL) {
@@ -1182,11 +1378,15 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         is_connected = 1;
                         half_open_dropped = 0;
                         half_open_timer_stop();
+                        reconnect_timer_stop();
+                        auto_reconnect = 1;             /* if this link is lost, keep trying to get it back */
+                        reconnect_attempt = 0;
                         status_text = "Connected";
                         {
                             bd_addr_t peer;
                             l2cap_event_channel_opened_get_address(packet, peer);
                             addr_to_str(peer, connected_str);
+                            memcpy(target_addr, peer, 6);            /* a retry goes back to the device that was really used */
                             keys_touch(peer);            /* "most recent device" = last one that connected */
                             bt_send_cmd(&hci_remote_name_request, peer, 0, 0, 0);   /* learn the device name once */
                         }
@@ -1204,10 +1404,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                         connected_str[0] = 0;
                         if (!hid_control) {
                             half_open_timer_stop();
+                            hid_peer_valid = 0;
                             we_initiated = 0;
                             if (half_open_dropped) half_open_dropped = 0;       /* keep "Connection to TV failed" on screen */
                             else status_text = "Disconnected - waiting for device";
                             check_pending_connect();
+                            reconnect_arm(0);
                         }
                     }
                     break;
@@ -1236,6 +1438,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     /* a link we do not use (a stray device, a failed pairing) dropped: keep our HID state */
                     if (hid_handle != 0 && little_endian_read_16(packet, 3) != hid_handle) break;
                     hid_handle = 0;
+                    hid_peer_valid = 0;
                     half_open_timer_stop();
                     half_open_dropped = 0;
                     connected_str[0] = 0;
@@ -1248,11 +1451,16 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     status_text = "Disconnected - waiting for TV";
                     scan_apply();                     /* paired devices stay connectable; discoverable only in pairing mode */
                     check_pending_connect();
+                    reconnect_arm(0);
                     break;
 
                 default:
                     break;
             }
+            break;
+
+        case DAEMON_EVENT_PACKET:
+            if (size >= 1 && packet[0] == DAEMON_EVENT_CONNECTION_CLOSED) daemon_lost();
             break;
 
         default:
@@ -1269,34 +1477,14 @@ static void *bluemote_thread(void *arg) {
 
     btstack_run_loop_init(btstack_run_loop_posix_get_instance());
 
-    /* the daemon is started on demand by launchd the moment we connect to its socket */
-    int opened = 0;
-    for (int i = 0; i < 20 && !opened; i++) {
-        opened = (bt_open() == 0);
-        if (!opened) {
-            status_text = "Waiting for BTstack daemon...";
-            usleep(500000);
-        }
-    }
-    if (!opened) {
-        status_text = "BTstack daemon not running (see /var/log/Bluemote.log)";
-        return NULL;
-    }
-
-    bt_register_packet_handler(packet_handler);
-
     btstack_run_loop_set_data_source_fd(&pipe_source, cmd_pipe[0]);
     btstack_run_loop_set_data_source_handler(&pipe_source, &pipe_process);
     btstack_run_loop_enable_data_source_callbacks(&pipe_source, DATA_SOURCE_CALLBACK_READ);
     btstack_run_loop_add_data_source(&pipe_source);
 
-    bt_send_cmd(&l2cap_register_service_cmd, BLUETOOTH_PSM_HID_CONTROL, 250);
-    bt_send_cmd(&l2cap_register_service_cmd, BLUETOOTH_PSM_HID_INTERRUPT, 250);
-    power_on_time = time(NULL);
-    bt_send_cmd(&btstack_set_power_mode, HCI_POWER_ON);
-    /* If the chip is already on (daemon kept running), powering on is a no-op and no state event follows,
-       so ask for the current state explicitly. */
-    bt_send_cmd(&btstack_get_state);
+    /* the daemon is started on demand by launchd the moment we connect to its socket; if it is not there yet (or
+       later goes away) daemon_open_handler() keeps trying by timer, see "connection to the BTstack daemon" */
+    daemon_open_handler(NULL);
 
     btstack_run_loop_execute();
 

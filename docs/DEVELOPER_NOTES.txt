@@ -155,6 +155,16 @@ PAIRING (built into the app, "Pair" tab)
                        incoming L2CAP channels / ignores link keys, PIN and passkey requests from unknown devices.
                        Pairing mode ends by itself after PAIRING_TIMEOUT_MS (120 s, btstack run loop timer on the Bluetooth
                        thread; waits PAIRING_PIN_GRACE_MS while a PIN / passkey box is open).
+  Auto reconnect     : bluemote_core.c, reconnect_arm() / reconnect_timer_handler(). Backoff 2 s, 5 s, 15 s, then 30 s,
+                       RECONNECT_MAX_ATTEMPTS (12) per cycle. Armed after a failed open, a closed link, a disconnection and a
+                       pairing (PAIR_CONNECT_DELAY_MS). Needs app_active (ACTIVE 1|0 from AppDelegate), auto_reconnect (cleared by
+                       Disconnect / Forget), no pairing mode, nothing connecting (we_initiated) and nothing connected.
+  One device at a time: hid_peer / hid_peer_valid hold the device whose channels are open; an incoming channel from another
+                       address is declined (busy_with_other_device()).
+  Daemon restart     : packet_handler() gets DAEMON_EVENT_CONNECTION_CLOSED -> daemon_lost() (reset_link_state(), timers off) ->
+                       daemon_open_handler() retries bt_open() by timer (500 ms, then 3 s, never gives up) ->
+                       daemon_session_start() (services, power on, get state) -> HCI_STATE_WORKING pushes SDP record, filter and
+                       reconnects if auto_reconnect. btstack.c sets btstack_connection = NULL on that event (the library frees it).
   Half open links    : interrupt channel failed -> drop_half_open_link() closes the control channel; interrupt channel
                        silent -> HALF_OPEN_TIMEOUT_MS (10 s) timer does the same.
                        Scan state: page scan always (gap_connectable_control(1) in the daemon), inquiry scan only in pairing mode.
